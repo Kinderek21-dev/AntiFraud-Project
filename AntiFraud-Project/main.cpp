@@ -1,5 +1,8 @@
 #include <iostream>
 #include <string>
+#include <cstdlib>
+#include <ctime>
+#include <cmath>
 
 using namespace std;
 
@@ -28,14 +31,15 @@ struct Transakcja {
 
 double losujKwote(double min, double max) {
     double f = (double)rand() / RAND_MAX;
-    return min + f * (max - min);
+    double wylosowana = min + f * (max - min);
+    return round(wylosowana * 100.0) / 100.0;
 }
 
 int main() {
     srand(time(0));
     cout << "Start generatora AntiFraud" << endl;
     Klient k1 = { 1, "Jan", "Kowalski" };
-    Konto ko1 = { 1, 1, "PL123456789", 1500.50 };
+    Konto ko1 = { 1, 1, "PL123456789", 1500.5 };
 
     for (int i = 1; i <= 5; i++) {
         Transakcja t;
