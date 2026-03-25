@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 
+using namespace std;
+
 struct Klient {
     int id;
     string imie;
@@ -22,7 +24,7 @@ struct Transakcja {
 };
 
 
-using namespace std;
+
 
 double losujKwote(double min, double max) {
     double f = (double)rand() / RAND_MAX;
@@ -34,6 +36,14 @@ int main() {
     cout << "Start generatora AntiFraud" << endl;
     Klient k1 = { 1, "Jan", "Kowalski" };
     Konto ko1 = { 1, 1, "PL123456789", 1500.50 };
-    cout << "Utworzono klienta: " << k1.imie << " " << k1.nazwisko << endl;
+
+    for (int i = 1; i <= 5; i++) {
+        Transakcja t;
+        t.id = i;
+        t.id_nadawcy = 1;
+        t.id_odbiorcy = 2;
+        t.kwota = losujKwote(10.0, 500.0);
+        cout << "Transakcja " << t.id << " kwota: " << t.kwota << " PLN" << endl;
+    }
     return 0;
 }
