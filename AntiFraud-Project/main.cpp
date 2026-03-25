@@ -44,6 +44,16 @@ int main() {
         t.id_odbiorcy = 2;
         t.kwota = losujKwote(10.0, 500.0);
         cout << "Transakcja " << t.id << " kwota: " << t.kwota << " PLN" << endl;
+
+        if (ko1.saldo >= t.kwota) {
+            ko1.saldo -= t.kwota;
+            cout << "Transakcja " << t.id << " zrealizowana. Kwota: " << t.kwota
+                << " PLN. Pozostale saldo: " << ko1.saldo << " PLN" << endl;
+        }
+        else {
+            cout << "Transakcja " << t.id << " ODRZUCONA. Kwota: "
+                << t.kwota << " PLN" << endl;
+        }
     }
     return 0;
 }
