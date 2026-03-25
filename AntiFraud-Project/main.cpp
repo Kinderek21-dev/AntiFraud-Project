@@ -19,5 +19,8 @@ using namespace std;
 
 int main() {
     cout << "Start generatora AntiFraud" << endl;
+    Klient k1 = { 1, "Jan", "Kowalski" };
+    Konto ko1 = { 1, 1, "PL123456789", 1500.50 };
+    cout << "Utworzono klienta: " << k1.imie << " " << k1.nazwisko << endl;
     return 0;
 }
