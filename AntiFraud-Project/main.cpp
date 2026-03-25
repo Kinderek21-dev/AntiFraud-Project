@@ -24,7 +24,13 @@ struct Transakcja {
 
 using namespace std;
 
+double losujKwote(double min, double max) {
+    double f = (double)rand() / RAND_MAX;
+    return min + f * (max - min);
+}
+
 int main() {
+    srand(time(0));
     cout << "Start generatora AntiFraud" << endl;
     Klient k1 = { 1, "Jan", "Kowalski" };
     Konto ko1 = { 1, 1, "PL123456789", 1500.50 };
