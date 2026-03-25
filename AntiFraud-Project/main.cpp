@@ -14,6 +14,13 @@ struct Konto {
     double saldo;
 };
 
+struct Transakcja {
+    int id;
+    int id_nadawcy;
+    int id_odbiorcy;
+    double kwota;
+};
+
 
 using namespace std;
 
