@@ -13,4 +13,5 @@ private:
     std::vector<std::string> nazwiska;
 public:
     Generator();
+    std::vector<Konto> generujKonta(int ilosc);
 };
