@@ -7,6 +7,12 @@ struct Konto {
     double saldo;
 };
 
+struct Transakcja {
+    int id_nadawcy;
+    int id_odbiorcy;
+    double kwota;
+};
+
 class Generator {
 private:
     std::vector<std::string> imiona;
