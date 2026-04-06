@@ -12,7 +12,7 @@ DatabaseManager::DatabaseManager(const std::string& conn_str) : C(conn_str) {
 void DatabaseManager::zapiszKonta(const std::vector<Konto>& konta) {
     pqxx::work W(C);
     for (const auto& k : konta) {
-        std::string sql = "INSERT INTO Konta (nazwa_wlasciciela, saldo) VALUES ('" + k.nazwa_wlasciciela + "', " + std::to_string(k.saldo) + ");";
+        std::string sql = "INSERT INTO Konta (nazwa_wlasciciela, saldo, waluta) VALUES ('" + k.nazwa_wlasciciela + "', " + std::to_string(k.saldo) + ", 'PLN');";
         W.exec(sql);
     }
     W.commit();
@@ -32,10 +32,9 @@ std::vector<int> DatabaseManager::pobierzIdKont() {
 void DatabaseManager::wykonajTransakcje(const std::vector<Transakcja>& transakcje) {
     pqxx::work W(C);
     for (const auto& t : transakcje) {
-        std::string sqlInsert = "INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji) "
-            "VALUES (" + std::to_string(t.id_nadawcy) + ", " +
-            std::to_string(t.id_odbiorcy) + ", " + std::to_string(t.kwota) + ", 'Zrealizowana');";
-
+        std::string sqlInsert = "INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, waluta, status_operacji, status_analizy) " 
+       "VALUES (" + std::to_string(t.id_nadawcy) + ", " +
+        std::to_string(t.id_odbiorcy) + ", " + std::to_string(t.kwota) + ", 'PLN', 'Zrealizowana', 'Oczekujaca');";
         std::string sqlUpdateNadawca = "UPDATE Konta SET saldo = saldo - " + std::to_string(t.kwota) +
             " WHERE uniqueid = " + std::to_string(t.id_nadawcy) + ";";
         std::string sqlUpdateOdbiorca = "UPDATE Konta SET saldo = saldo + " + std::to_string(t.kwota) +

@@ -19,7 +19,7 @@ int main() {
     std::vector<int> dostepneId = db.pobierzIdKont();
     std::cout << "Znaleziono " << dostepneId.size() << " kont w bazie." << std::endl;
 
-    std::vector<Transakcja> paczkaTransakcji = gen.generujTransakcje(dostepneId, 5);
+    std::vector<Transakcja> paczkaTransakcji = gen.generujTransakcje(dostepneId, 500);
 
     if (!paczkaTransakcji.empty()) {
         db.wykonajTransakcje(paczkaTransakcji);
