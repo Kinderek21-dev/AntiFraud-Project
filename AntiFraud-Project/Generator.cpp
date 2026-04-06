@@ -7,6 +7,7 @@ Generator::Generator() {
     nazwiska = { "Kowalski", "Nowak", "Wisniewski", "Wojcik", "Kaminski", "Lewandowski" };
     srand(time(NULL));
 }
+
 std::vector<Konto> Generator::generujKonta(int ilosc) {
     std::vector<Konto> konta;
     for (int i = 0; i < ilosc; i++) {
@@ -21,5 +22,21 @@ std::vector<Konto> Generator::generujKonta(int ilosc) {
 std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dostepne_id, int ilosc) {
     std::vector<Transakcja> transakcje;
     if (dostepne_id.size() < 2) return transakcje;
+    return transakcje;
+}
+
+std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dostepne_id, int ilosc) {
+    std::vector<Transakcja> transakcje;
+    if (dostepne_id.size() < 2) return transakcje;
+
+    for (int i = 0; i < ilosc; i++) {
+        int idx_nadawcy = rand() % dostepne_id.size();
+        int idx_odbiorcy = rand() % dostepne_id.size();
+        while (idx_nadawcy == idx_odbiorcy) {
+            idx_odbiorcy = rand() % dostepne_id.size();
+        }
+        double kwota = (rand() % 500) + 10.0;
+        transakcje.push_back({ dostepne_id[idx_nadawcy], dostepne_id[idx_odbiorcy], kwota });
+    }
     return transakcje;
 }
