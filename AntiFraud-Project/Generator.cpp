@@ -17,3 +17,9 @@ std::vector<Konto> Generator::generujKonta(int ilosc) {
     }
     return konta;
 }
+
+std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dostepne_id, int ilosc) {
+    std::vector<Transakcja> transakcje;
+    if (dostepne_id.size() < 2) return transakcje;
+    return transakcje;
+}
