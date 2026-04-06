@@ -28,3 +28,23 @@ std::vector<int> DatabaseManager::pobierzIdKont() {
     }
     return id_kont;
 }
+
+void DatabaseManager::wykonajTransakcje(const std::vector<Transakcja>& transakcje) {
+    pqxx::work W(C);
+    for (const auto& t : transakcje) {
+        std::string sqlInsert = "INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji) "
+            "VALUES (" + std::to_string(t.id_nadawcy) + ", " +
+            std::to_string(t.id_odbiorcy) + ", " + std::to_string(t.kwota) + ", 'Zrealizowana');";
+
+        std::string sqlUpdateNadawca = "UPDATE Konta SET saldo = saldo - " + std::to_string(t.kwota) +
+            " WHERE id = " + std::to_string(t.id_nadawcy) + ";";
+        std::string sqlUpdateOdbiorca = "UPDATE Konta SET saldo = saldo + " + std::to_string(t.kwota) +
+            " WHERE id = " + std::to_string(t.id_odbiorcy) + ";";
+
+        W.exec(sqlInsert);
+        W.exec(sqlUpdateNadawca);
+        W.exec(sqlUpdateOdbiorca);
+    }
+    W.commit();
+    std::cout << "Wykonano " << transakcje.size() << " transakcji." << std::endl;
+}

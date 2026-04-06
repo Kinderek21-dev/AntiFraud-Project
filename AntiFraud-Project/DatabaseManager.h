@@ -11,4 +11,5 @@ public:
     DatabaseManager(const std::string& conn_str);
     void zapiszKonta(const std::vector<Konto>& konta);
     std::vector<int> pobierzIdKont();
+    void wykonajTransakcje(const std::vector<Transakcja>& transakcje);
 };
