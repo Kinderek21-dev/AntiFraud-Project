@@ -6,7 +6,7 @@ int main() {
     DatabaseManager db(constr);
 
     Generator gen;
-    std::vector<Konto> noweKonta = gen.generujKonta(10);
+    std::vector<Konto> noweKonta = gen.generujKonta(100);
     db.zapiszKonta(noweKonta);
     return 0;
 }
