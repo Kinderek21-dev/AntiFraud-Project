@@ -22,7 +22,7 @@ void DatabaseManager::zapiszKonta(const std::vector<Konto>& konta) {
 std::vector<int> DatabaseManager::pobierzIdKont() {
     std::vector<int> id_kont;
     pqxx::work W(C);
-    pqxx::result R = W.exec("SELECT id FROM Konta;");
+    pqxx::result R = W.exec("SELECT uniqueid FROM Konta;");
     for (auto row : R) {
         id_kont.push_back(row[0].as<int>());
     }
@@ -37,9 +37,9 @@ void DatabaseManager::wykonajTransakcje(const std::vector<Transakcja>& transakcj
             std::to_string(t.id_odbiorcy) + ", " + std::to_string(t.kwota) + ", 'Zrealizowana');";
 
         std::string sqlUpdateNadawca = "UPDATE Konta SET saldo = saldo - " + std::to_string(t.kwota) +
-            " WHERE id = " + std::to_string(t.id_nadawcy) + ";";
+            " WHERE uniqueid = " + std::to_string(t.id_nadawcy) + ";";
         std::string sqlUpdateOdbiorca = "UPDATE Konta SET saldo = saldo + " + std::to_string(t.kwota) +
-            " WHERE id = " + std::to_string(t.id_odbiorcy) + ";";
+            " WHERE uniqueid = " + std::to_string(t.id_odbiorcy) + ";";
 
         W.exec(sqlInsert);
         W.exec(sqlUpdateNadawca);
