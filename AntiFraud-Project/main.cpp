@@ -2,8 +2,9 @@
 #include <iostream>
 #include "Generator.h"
 
+
 int main() {
-    string constr = "dbname=antifraud user=postgres password=12345 host=db port=5432";
+    std::string constr = "dbname=antifraud user=postgres password=12345 host=db port=5432";    
     DatabaseManager db(constr);
 
     Generator gen;
