@@ -11,7 +11,7 @@ int main() {
     srand(time(0));
     cout << "Start generatora AntiFraud" << endl;
 
-    string constr = "dbname=antifraud user=postgres password=12345 host=127.0.0.1 port=5432";
+    string constr = "dbname=antifraud user=postgres password=12345 host=db port=5432";
 
     DatabaseManager db(constr);
     Generator gen;
