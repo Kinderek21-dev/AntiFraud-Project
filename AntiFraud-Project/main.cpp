@@ -2,6 +2,8 @@
 #include <string>
 #include <vector>
 #include <ctime>
+#include <thread>  
+#include <chrono>
 #include "DatabaseManager.h"
 #include "Generator.h"
 
@@ -9,21 +11,26 @@ using namespace std;
 
 int main() {
     srand(time(0));
-    cout << "Start generatora AntiFraud" << endl;
 
     string constr = "dbname=antifraud user=postgres password=12345 host=db port=5432";
 
     DatabaseManager db(constr);
     Generator gen;
+    while (true) {
+        int ilosc_kont = (rand() % 300) + 1;
+        vector<Konto> noweKonta = gen.generujKonta(ilosc_kont);
+        db.zapiszKonta(noweKonta);
 
-    std::vector<int> dostepneId = db.pobierzIdKont();
-    std::cout << "Znaleziono " << dostepneId.size() << " kont w bazie." << std::endl;
+        vector<int> dostepneId = db.pobierzIdKont();
+        if (dostepneId.size() >= 2) {
+            int ilosc_transakcji = (rand() % 600) + 1;
+            vector<Transakcja> noweTransakcje = gen.generujTransakcje(dostepneId, ilosc_transakcji);
+            db.wykonajTransakcje(noweTransakcje);
+        }
 
-    std::vector<Transakcja> paczkaTransakcji = gen.generujTransakcje(dostepneId, 500);
+        int czas_pauzy = (rand() % 1) + 1;
 
-    if (!paczkaTransakcji.empty()) {
-        db.wykonajTransakcje(paczkaTransakcji);
+        this_thread::sleep_for(chrono::seconds(czas_pauzy));
     }
-
     return 0;
 }
