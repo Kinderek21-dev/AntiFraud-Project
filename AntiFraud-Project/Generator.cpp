@@ -1,6 +1,8 @@
 #include "Generator.h"
 #include <cstdlib>
 #include <ctime>
+#include <random> 
+#include <cmath>  
 
 Generator::Generator() {
     imiona = {
@@ -73,13 +75,35 @@ std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dos
     std::vector<Transakcja> transakcje;
     if (dostepne_id.size() < 2) return transakcje;
 
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dist_procent(1, 100);
+
     for (int i = 0; i < ilosc; i++) {
         int idx_nadawcy = rand() % dostepne_id.size();
         int idx_odbiorcy = rand() % dostepne_id.size();
         while (idx_nadawcy == idx_odbiorcy) {
             idx_odbiorcy = rand() % dostepne_id.size();
         }
-        double kwota = (rand() % 500) + 10.0;
+
+        double kwota = 0.0;
+        int szansa = dist_procent(gen); 
+
+        if (szansa <= 95) {
+            std::uniform_real_distribution<> dist_normal(10.0, 4000.0);
+            kwota = dist_normal(gen);
+        }
+        else if (szansa > 95 && szansa <= 99) {
+            std::uniform_real_distribution<> dist_huge(50000.0, 250000.0);
+            kwota = dist_huge(gen);
+        }
+        else {
+            std::uniform_real_distribution<> dist_micro(0.01, 2.00);
+            kwota = dist_micro(gen);
+        }
+
+        kwota = std::round(kwota * 100.0) / 100.0;
+
         transakcje.push_back({ dostepne_id[idx_nadawcy], dostepne_id[idx_odbiorcy], kwota });
     }
     return transakcje;
