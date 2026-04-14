@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: 12345
       POSTGRES_DB: antifraud
     ports:
-      - "5432:5432"
+      - "5433:5432" 
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       
@@ -15,5 +15,12 @@ services:
     build: .
     environment:
       - DB_HOST=db
+    depends_on:
+      - db
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
     depends_on:
       - db
