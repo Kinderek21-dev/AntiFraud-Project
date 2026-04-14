@@ -24,3 +24,10 @@ services:
       - "8000:8000"
     depends_on:
       - db
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html

@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE Administratorzy (
     UniqueID SERIAL PRIMARY KEY,
     login VARCHAR(50) UNIQUE NOT NULL,
@@ -46,3 +47,7 @@ CREATE TABLE Transakcje_Alerty (
     id_alertu INT REFERENCES Alerty(UniqueID),
     PRIMARY KEY (id_transakcji, id_alertu)
 );
+
+
+INSERT INTO Administratorzy (login, haslo_hash) 
+VALUES ('admin', crypt('admin123', gen_salt('bf')));

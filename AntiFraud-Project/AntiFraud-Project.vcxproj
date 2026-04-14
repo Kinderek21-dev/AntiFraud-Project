@@ -132,6 +132,11 @@
     <ClInclude Include="DatabaseManager.h" />
     <ClInclude Include="Generator.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="frontend\index.html" />
+    <None Include="frontend\script.js" />
+    <None Include="frontend\style.css" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

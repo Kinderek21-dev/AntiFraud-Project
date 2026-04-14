@@ -33,4 +33,15 @@
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="frontend\index.html">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend\script.js">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend\style.css">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+  </ItemGroup>
 </Project>
