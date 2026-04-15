@@ -62,3 +62,46 @@ def get_stats():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+
+@app.get("/api/chart")
+def get_chart_data(filter: str = "live"):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        if filter == "live":
+
+            cur.execute("""
+                SELECT TO_CHAR(czas_transakcji, 'HH24:MI') as czas, COUNT(*) 
+                FROM Transakcje 
+                GROUP BY TO_CHAR(czas_transakcji, 'HH24:MI') 
+                ORDER BY MAX(czas_transakcji) DESC LIMIT 15;
+            """)
+        else:
+
+            cur.execute("""
+                SELECT TO_CHAR(czas_transakcji, 'YYYY-MM-DD') as czas, COUNT(*) 
+                FROM Transakcje 
+                GROUP BY TO_CHAR(czas_transakcji, 'YYYY-MM-DD') 
+                ORDER BY MAX(czas_transakcji) DESC LIMIT 15;
+            """)
+
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+
+
+        results.reverse()
+
+        labels = [row[0] for row in results]
+        transactions = [row[1] for row in results]
+
+        return {
+            "labels": labels,
+            "transactions": transactions,
+            "anomalies": [0] * len(labels) 
+        }
+    except Exception as e:
+        return {"error": str(e)}

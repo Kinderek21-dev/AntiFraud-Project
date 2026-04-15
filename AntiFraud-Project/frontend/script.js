@@ -20,8 +20,8 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
 
 
         if (response.ok) {
-            alert("UDAŁO SIĘ: " + data.message);
-         
+
+            window.location.href = "dashboard.html";
         } else {
            
             alert("BŁĄD: " + data.detail);
