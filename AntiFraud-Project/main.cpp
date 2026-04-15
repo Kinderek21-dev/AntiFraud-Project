@@ -13,24 +13,50 @@ int main() {
     srand(time(0));
 
     string constr = "dbname=antifraud user=postgres password=12345 host=db port=5432";
-
     DatabaseManager db(constr);
     Generator gen;
-    while (true) {
-        int ilosc_kont = (rand() % 300) + 1;
-        vector<Konto> noweKonta = gen.generujKonta(ilosc_kont);
-        db.zapiszKonta(noweKonta);
 
-        vector<int> dostepneId = db.pobierzIdKont();
-        if (dostepneId.size() >= 2) {
-            int ilosc_transakcji = (rand() % 600) + 1;
-            vector<Transakcja> noweTransakcje = gen.generujTransakcje(dostepneId, ilosc_transakcji);
+    cout << "Analiza obecnej bazy danych..." << endl;
+    vector<pair<int, double>> obecneKonta = db.pobierzAktywneKonta();
+
+    if (obecneKonta.size() < 1000) {
+        cout << "Baza pusta. Inicjalizacja 10 000 kont poczatkowych..." << endl;
+        vector<Konto> startoweKonta = gen.generujKonta(10000);
+        db.zapiszKonta(startoweKonta);
+    }
+
+    int petla_minuta = 0;
+    int licznik_fraudow = 0;
+
+
+    while (true) {
+        vector<pair<int, double>> dostepneKonta = db.pobierzAktywneKonta();
+
+        if (dostepneKonta.size() >= 3) {
+
+            int ilosc_transakcji = (rand() % 40) + 10;
+            vector<Transakcja> noweTransakcje = gen.generujTransakcje(dostepneKonta, ilosc_transakcji);
             db.wykonajTransakcje(noweTransakcje);
+
+            licznik_fraudow++;
+            if (licznik_fraudow >= 10) {
+                vector<Transakcja> fraud = gen.wstrzyknijPralnie(dostepneKonta);
+                if (!fraud.empty()) {
+                    db.wykonajTransakcje(fraud);
+                }
+                licznik_fraudow = 0;
+            }
         }
 
-        int czas_pauzy = (rand() % 1) + 1;
+        petla_minuta++;
+        if (petla_minuta >= 60) {
+            cout << "[ROZWOJ BIZNESOWY] Dodano 10 nowych klientow do banku." << endl;
+            vector<Konto> nowiKlienci = gen.generujKonta(10);
+            db.zapiszKonta(nowiKlienci);
+            petla_minuta = 0;
+        }
 
-        this_thread::sleep_for(chrono::seconds(czas_pauzy));
+        this_thread::sleep_for(chrono::seconds(1));
     }
     return 0;
 }

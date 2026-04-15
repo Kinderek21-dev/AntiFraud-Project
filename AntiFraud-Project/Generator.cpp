@@ -64,36 +64,49 @@ std::vector<Konto> Generator::generujKonta(int ilosc) {
     for (int i = 0; i < ilosc; i++) {
         std::string imie = imiona[rand() % imiona.size()];
         std::string nazwisko = nazwiska[rand() % nazwiska.size()];
-        double saldo = (rand() % 10000) + 100.0;
+
+        double saldo = 0.0;
+        int typ_klienta = rand() % 100;
+
+        if (typ_klienta < 95) {
+            saldo = (rand() % 49000) + 1000.0;
+        }
+        else if (typ_klienta < 98) {
+            saldo = (rand() % 100000) + 35000.0;
+        }
+        else {
+            saldo = (rand() % 3000000) + 250000.0;
+        }
+
         konta.push_back({ imie + " " + nazwisko, saldo });
     }
     return konta;
 }
 
 
-std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dostepne_id, int ilosc) {
+std::vector<Transakcja> Generator::generujTransakcje(const std::vector<std::pair<int, double>>& konta_z_saldem, int ilosc) {
     std::vector<Transakcja> transakcje;
-    if (dostepne_id.size() < 2) return transakcje;
+    if (konta_z_saldem.size() < 2) return transakcje;
 
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dist_procent(1, 100);
 
     for (int i = 0; i < ilosc; i++) {
-        int idx_nadawcy = rand() % dostepne_id.size();
-        int idx_odbiorcy = rand() % dostepne_id.size();
+        int idx_nadawcy = rand() % konta_z_saldem.size();
+        int idx_odbiorcy = rand() % konta_z_saldem.size();
         while (idx_nadawcy == idx_odbiorcy) {
-            idx_odbiorcy = rand() % dostepne_id.size();
+            idx_odbiorcy = rand() % konta_z_saldem.size();
         }
 
         double kwota = 0.0;
-        int szansa = dist_procent(gen); 
+        int szansa = dist_procent(gen);
 
-        if (szansa <= 95) {
+        if (szansa <= 97) {
             std::uniform_real_distribution<> dist_normal(10.0, 4000.0);
             kwota = dist_normal(gen);
         }
-        else if (szansa > 95 && szansa <= 99) {
+        else if (szansa > 97 && szansa <= 99) {
             std::uniform_real_distribution<> dist_huge(50000.0, 250000.0);
             kwota = dist_huge(gen);
         }
@@ -104,7 +117,39 @@ std::vector<Transakcja> Generator::generujTransakcje(const std::vector<int>& dos
 
         kwota = std::round(kwota * 100.0) / 100.0;
 
-        transakcje.push_back({ dostepne_id[idx_nadawcy], dostepne_id[idx_odbiorcy], kwota });
+        double saldo_nadawcy = konta_z_saldem[idx_nadawcy].second;
+        if (kwota > saldo_nadawcy) {
+            kwota = saldo_nadawcy; 
+        }
+        if (kwota <= 0) continue; 
+
+        transakcje.push_back({ konta_z_saldem[idx_nadawcy].first, konta_z_saldem[idx_odbiorcy].first, kwota });
     }
     return transakcje;
+}
+
+
+std::vector<Transakcja> Generator::wstrzyknijPralnie(const std::vector<std::pair<int, double>>& konta_z_saldem) {
+    std::vector<Transakcja> pralnia;
+    if (konta_z_saldem.size() < 3) return pralnia;
+
+    int a = rand() % konta_z_saldem.size();
+    int b = rand() % konta_z_saldem.size();
+    int c = rand() % konta_z_saldem.size();
+
+    while (a == b || b == c || a == c) {
+        b = rand() % konta_z_saldem.size();
+        c = rand() % konta_z_saldem.size();
+    }
+
+    double kwota = konta_z_saldem[a].second * 0.9;
+    kwota = std::round(kwota * 100.0) / 100.0;
+
+    if (kwota < 100.0) return pralnia;
+
+    pralnia.push_back({ konta_z_saldem[a].first, konta_z_saldem[b].first, kwota });
+    pralnia.push_back({ konta_z_saldem[b].first, konta_z_saldem[c].first, kwota });
+    pralnia.push_back({ konta_z_saldem[c].first, konta_z_saldem[a].first, kwota });
+
+    return pralnia;
 }

@@ -19,14 +19,14 @@ void DatabaseManager::zapiszKonta(const std::vector<Konto>& konta) {
     std::cout << "Zapisano " << konta.size() << " kont do bazy." << std::endl;
 }
 
-std::vector<int> DatabaseManager::pobierzIdKont() {
-    std::vector<int> id_kont;
+std::vector<std::pair<int, double>> DatabaseManager::pobierzAktywneKonta() {
+    std::vector<std::pair<int, double>> konta;
     pqxx::work W(C);
-    pqxx::result R = W.exec("SELECT uniqueid FROM Konta;");
+    pqxx::result R = W.exec("SELECT uniqueid, saldo FROM Konta;");
     for (auto row : R) {
-        id_kont.push_back(row[0].as<int>());
+        konta.push_back({ row[0].as<int>(), row[1].as<double>() });
     }
-    return id_kont;
+    return konta;
 }
 
 void DatabaseManager::wykonajTransakcje(const std::vector<Transakcja>& transakcje) {
