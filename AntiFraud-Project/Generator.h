@@ -20,5 +20,6 @@ private:
 public:
     Generator();
     std::vector<Konto> generujKonta(int ilosc);
-    std::vector<Transakcja> generujTransakcje(const std::vector<int>& dostepne_id, int ilosc);
+    std::vector<Transakcja> generujTransakcje(const std::vector<std::pair<int, double>>& konta_z_saldem, int ilosc);
+    std::vector<Transakcja> wstrzyknijPralnie(const std::vector<std::pair<int, double>>& konta_z_saldem);
 };

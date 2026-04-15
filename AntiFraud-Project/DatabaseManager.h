@@ -2,6 +2,7 @@
 #include <pqxx/pqxx>
 #include <string>
 #include <vector>
+#include <utility>
 #include "Generator.h"
 
 class DatabaseManager {
@@ -10,6 +11,6 @@ private:
 public:
     DatabaseManager(const std::string& conn_str);
     void zapiszKonta(const std::vector<Konto>& konta);
-    std::vector<int> pobierzIdKont();
+    std::vector<std::pair<int, double>> pobierzAktywneKonta();
     void wykonajTransakcje(const std::vector<Transakcja>& transakcje);
 };
