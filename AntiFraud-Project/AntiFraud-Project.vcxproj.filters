@@ -43,5 +43,8 @@
     <None Include="frontend\style.css">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="api\ml_worker.py">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

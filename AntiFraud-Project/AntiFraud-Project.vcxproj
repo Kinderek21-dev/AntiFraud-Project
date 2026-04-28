@@ -133,6 +133,7 @@
     <ClInclude Include="Generator.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="api\ml_worker.py" />
     <None Include="frontend\index.html" />
     <None Include="frontend\script.js" />
     <None Include="frontend\style.css" />

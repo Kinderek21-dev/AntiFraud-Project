@@ -3,3 +3,6 @@ uvicorn
 psycopg2-binary
 bcrypt
 pydantic
+pandas
+scikit-learn
+SQLAlchemy

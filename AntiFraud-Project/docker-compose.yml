@@ -24,6 +24,9 @@ services:
       - "8000:8000"
     depends_on:
       - db
+    volumes:
+      - ./api:/app
+      - D:/AI:/app/models
 
   frontend:
     image: nginx:alpine
