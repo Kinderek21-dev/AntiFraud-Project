@@ -29,8 +29,11 @@ services:
       - D:/AI:/app/models
 
   frontend:
-    image: nginx:alpine
+    build: ./frontend-react
     ports:
-      - "3000:80"
+      - "3000:5173"
     volumes:
-      - ./frontend:/usr/share/nginx/html
+      - ./frontend-react:/app
+      - /app/node_modules
+    depends_on:
+      - api
