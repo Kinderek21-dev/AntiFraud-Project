@@ -133,7 +133,13 @@
     <ClInclude Include="Generator.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="api\main.py" />
     <None Include="api\ml_worker.py" />
+    <None Include="frontend-react\src\App.jsx" />
+    <None Include="frontend-react\src\Dashboard.jsx" />
+    <None Include="frontend-react\src\Login.jsx" />
+    <None Include="frontend-react\src\main.jsx" />
+    <None Include="frontend-react\src\style.css" />
     <None Include="frontend\index.html" />
     <None Include="frontend\script.js" />
     <None Include="frontend\style.css" />

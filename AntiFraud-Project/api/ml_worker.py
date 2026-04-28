@@ -10,49 +10,52 @@ engine = create_engine(DB_URL)
 MODEL_PATH = "/app/models/moj_mózg_AI.joblib"
 
 def run_ml_job():
-    print("[ML WORKER] Budzę się! Pobieram najnowsze, nieocenione transakcje...")
+    print("\n[ML] Szukam nowych transakcji do analizy...")
     
     try:
-        
         query = """
-            SELECT t."uniqueid", t.kwota 
+            SELECT 
+                t."uniqueid", 
+                t.kwota, 
+                k.saldo,
+                w.id_transkacji as is_evaluated
             FROM Transakcje t
+            JOIN Konta k ON t.id_konta_nadawcy = k."uniqueid"
             LEFT JOIN Wyniki_ML w ON t."uniqueid" = w.id_transkacji
-            WHERE w.id_transkacji IS NULL
             ORDER BY t."uniqueid" DESC 
-            LIMIT 1000;
+            LIMIT 2000;
         """
         df = pd.read_sql(query, engine)
         
-        if len(df) < 20:
-            print(f"[ML WORKER] Mam tylko {len(df)} nowych transakcji. Czekam aż C++ wygeneruje więcej...")
+        do_oceny = df[df['is_evaluated'].isnull()].copy()
+        
+        if len(do_oceny) < 10:
+            print(f"[ML] Tylko {len(do_oceny)} nowych transakcji")
             return
 
-        X = df[['kwota']] 
-
-        if os.path.exists(MODEL_PATH):
-            model = joblib.load(MODEL_PATH)
-        else:
-            print("[ML WORKER] Uczę się od zera")
-            model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
-            model.fit(X)
-            joblib.dump(model, MODEL_PATH)
-
-       
-        df['is_fraud'] = model.predict(X)             
-        df['anomaly_score'] = model.decision_function(X)
-
-        oszustwa = df[df['is_fraud'] == -1]
-        print(f"[ML WORKER] Analiza gotowa. Znaleziono {len(oszustwa)} podejrzanych transakcji.")
+        df['procent_salda'] = df['kwota'] / (df['saldo'] + 0.01)
+        X_all = df[['kwota', 'procent_salda']]
         
-       
-        print("[ML WORKER] Zapisuję wyniki analizy do bazy danych...")
+        print("[ML] Trenuję...")
+        model = IsolationForest(n_estimators=150, contamination=0.03, random_state=42)
+        model.fit(X_all)
+        joblib.dump(model, MODEL_PATH)
+
+        do_oceny['procent_salda'] = do_oceny['kwota'] / (do_oceny['saldo'] + 0.01)
+        X_nowe = do_oceny[['kwota', 'procent_salda']]
+
+        do_oceny['is_fraud'] = model.predict(X_nowe)             
+        do_oceny['anomaly_score'] = model.decision_function(X_nowe)
+
+        oszustwa = do_oceny[do_oceny['is_fraud'] == -1]
+        print(f"[ML] Zbadano {len(do_oceny)} nowych przelewów. Wyłapano {len(oszustwa)} podejrzanych zachowań.")
+        
+        print("[ML] Zapisuję punktację do bazy danych...")
         with engine.begin() as conn:
-            for index, row in df.iterrows():
+            for index, row in do_oceny.iterrows():
                 czy_podejrzana = True if row['is_fraud'] == -1 else False
                 ocena = float(row['anomaly_score'])
                 id_transakcji = int(row['uniqueid'])
-                
                 
                 insert_query = text("""
                     INSERT INTO Wyniki_ML (id_transkacji, ocena_anomali, czy_podejrzana)
@@ -61,15 +64,15 @@ def run_ml_job():
                 """)
                 conn.execute(insert_query, {"id_t": id_transakcji, "ocena": ocena, "czy_pod": czy_podejrzana})
                 
-        print("[ML WORKER] Zapisano pomyślnie! Idę spać na 10 sekund.\n")
+        print("[ML] Zapisano pomyślnie.")
 
     except Exception as e:
-        print(f"[ML WORKER] Wystąpił błąd: {e}")
+        print(f"[ML] Wystąpił błąd: {e}")
 
 if __name__ == "__main__":
-    print("[ML WORKER] Uruchomiono moduł Sztucznej Inteligencji.")
+    print("[MLR] Uruchomiono moduł Sztucznej Inteligencji.")
     os.makedirs("/app/models", exist_ok=True)
     
     while True:
         run_ml_job()
-        time.sleep(10) 
+        time.sleep(10)

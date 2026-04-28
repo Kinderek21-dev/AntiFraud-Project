@@ -46,5 +46,23 @@
     <None Include="api\ml_worker.py">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="api\main.py">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\App.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\Dashboard.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\Login.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\main.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\style.css">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>
