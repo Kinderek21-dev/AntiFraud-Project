@@ -133,6 +133,7 @@
     <ClInclude Include="Generator.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="AmlAlerts.jsx" />
     <None Include="api\main.py" />
     <None Include="api\ml_worker.py" />
     <None Include="frontend-react\src\App.jsx" />

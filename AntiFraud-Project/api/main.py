@@ -119,15 +119,15 @@ def get_alerts():
         
         alerts = []
         for row in results:
-            raw_score = row[3]
+            raw_score = float(row[3])
             ui_score = round(min(0.99, abs(raw_score) * 2.5 + 0.5), 2)
             
-                alert_type = "Nietypowa kwota transakcji"
-            if row[2] < 5:
-                alert_type = "Podejrzana mikropłatność"
-            elif row[2] > 50000:
+            alert_type = "Nietypowa kwota transakcji"
+            if float(row[2]) < 5:
+                alert_type = "Podejrzana mała płatność (Testowanie karty)"
+            elif float(row[2]) > 50000:
                 alert_type = "Odbiorca wysokiego ryzyka"
-            elif row[2] > 15000:
+            elif float(row[2]) > 15000:
                 alert_type = "Podejrzana dynamika operacji"
 
             alerts.append({
@@ -136,6 +136,60 @@ def get_alerts():
                 "type": alert_type,
                 "score": f"{ui_score:.2f}",
                 "status": "New"
+            })
+            
+        return alerts
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/alerts/history")
+def get_alerts_history():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.uniqueid, TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD HH24:MI'), 
+                   t.kwota, w.ocena_anomali, t.id_konta_nadawcy, t.id_konta_odbiorcy
+            FROM Transakcje t
+            JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
+            WHERE w.czy_podejrzana = true
+            ORDER BY t.czas_transakcji DESC LIMIT 100;
+        """)
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        alerts = []
+        for row in results:
+            raw_score = float(row[3])
+            ui_score = round(min(0.99, abs(raw_score) * 2.5 + 0.5), 2)
+            kwota = float(row[2])
+            nadawca = row[4]
+            odbiorca = row[5]
+            
+            alert_type = "Nietypowa kwota transakcji"
+            reason = f"Przelew na kwotę {kwota} PLN znacznie odbiega od standardowego profilu tego klienta. Model wykrył anomalię."
+            
+            if kwota < 5:
+                alert_type = "Podejrzana mikropłatność (Testowanie karty)"
+                reason = f"Bardzo niska kwota ({kwota} PLN). Możliwa próba testowania kradzionej karty przez bota przed większym atakiem."
+            elif kwota > 50000:
+                alert_type = "Odbiorca wysokiego ryzyka"
+                reason = f"Olbrzymia kwota ({kwota} PLN). Wysokie ryzyko prania brudnych pieniędzy lub wyprowadzenia kapitału na zagraniczne konta."
+            elif kwota > 15000:
+                alert_type = "Podejrzana dynamika operacji"
+                reason = f"Nietypowo duży przelew ({kwota} PLN) jak na to konto. Istnieje ryzyko przejęcia konta."
+
+            alerts.append({
+                "id": f"ALR-2026-{str(row[0]).zfill(3)}",
+                "date": row[1],
+                "type": alert_type,
+                "score": f"{ui_score:.2f}",
+                "status": "New",
+                "kwota": kwota,
+                "nadawca": nadawca,
+                "odbiorca": odbiorca,
+                "reason": reason
             })
             
         return alerts
