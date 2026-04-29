@@ -31,6 +31,7 @@ CREATE TABLE Wyniki_ML (
     id_transkacji INT UNIQUE REFERENCES Transakcje(UniqueID),
     ocena_anomali DECIMAL(5, 4) NOT NULL,
     czy_podejrzana BOOLEAN NOT NULL,
+    status VARCHAR(50) DEFAULT 'New',
     data_utworzenia TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
