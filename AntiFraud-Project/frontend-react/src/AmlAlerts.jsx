@@ -106,7 +106,7 @@ export default function AmlAlerts() {
                 <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
                 <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
                 <div className="nav-item active"><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-                <div className="nav-item"><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
+                <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
                 <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
                 <div className="sidebar-bottom">
                     <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>

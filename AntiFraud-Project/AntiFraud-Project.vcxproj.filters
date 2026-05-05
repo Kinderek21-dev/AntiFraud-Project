@@ -64,5 +64,10 @@
     <None Include="frontend-react\src\style.css">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="frontend-react\src\AmlAlerts.jsx" />
+    <None Include="frontend-react\src\Settings.jsx" />
+    <None Include="frontend-react\src\TransactionStatistics.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

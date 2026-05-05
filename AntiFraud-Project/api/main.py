@@ -1,3 +1,6 @@
+from fastapi import APIRouter
+from sqlalchemy import text
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -191,3 +194,57 @@ def get_alerts_history():
             if len(alerts) >= 100: break
         return alerts
     except Exception as e: return {"error": str(e)}
+
+@app.get("/api/statistics")
+def get_statistics():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT DATE(czas_transakcji) as data_dnia, SUM(kwota) as suma_kwot
+            FROM Transakcje
+            WHERE czas_transakcji >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY DATE(czas_transakcji)
+            ORDER BY data_dnia ASC;
+        """)
+        volume_result = cur.fetchall()
+        
+        dni_tygodnia = ["Pon", "Wto", "Śro", "Czw", "Pią", "Sob", "Nie"]
+        volume_data = []
+        for row in volume_result:
+            data_obj = row[0]
+            nazwa_dnia = dni_tygodnia[data_obj.weekday()]
+            volume_data.append({"name": nazwa_dnia, "value": float(row[1] or 0)})
+
+        cur.execute("""
+            SELECT czy_podejrzana, COUNT(*) as ilosc
+            FROM Wyniki_ML
+            GROUP BY czy_podejrzana;
+        """)
+        dist_result = cur.fetchall()
+        
+        normalne = 0
+        anomalie = 0
+        for row in dist_result:
+            if row[0] == True: 
+                anomalie = row[1]
+            else:
+                normalne = row[1]
+
+        cur.close()
+        conn.close()
+
+        distribution_data = [
+            {"name": "Normalne", "value": normalne},
+            {"name": "Anomalie", "value": anomalie}
+        ]
+
+        return {
+            "volumeData": volume_data,
+            "distributionData": distribution_data
+        }
+        
+    except Exception as e:
+        print(f"[API BŁĄD] Statystyki: {e}")
+        return {"volumeData": [], "distributionData": []}
