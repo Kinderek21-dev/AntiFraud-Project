@@ -1,11 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
+import ForceGraph2D from 'react-force-graph-2d';
 export default function AmlAlerts() {
     const navigate = useNavigate();
     const [alerts, setAlerts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedAlert, setSelectedAlert] = useState(null);
+    const [showGraph, setShowGraph] = useState(false);
+    const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+
+    const fetchGraphData = async () => {
+        try {
+            const res = await fetch('http://localhost:8000/api/graph');
+            if (res.ok) {
+                const data = await res.json();
+                setGraphData(data);
+                setShowGraph(true); 
+            }
+        } catch (error) { console.error("Błąd pobierania grafu:", error); }
+    }; 
 
     const fetchHistory = async () => {
         try {
@@ -197,6 +210,60 @@ export default function AmlAlerts() {
                         <div className="reason-box">
                             <strong><i className="fa-solid fa-robot"></i> Diagnoza Sztucznej Inteligencji:</strong><br />
                             {selectedAlert.reason}
+                        </div>
+                        {selectedAlert.xai && selectedAlert.xai.length > 0 && (
+                            <div style={{ marginTop: '20px', padding: '15px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                <strong style={{ color: '#1E3A8A', fontSize: '13px', textTransform: 'uppercase' }}>
+                                    <i className="fa-solid fa-microchip"></i> XAI: Wpływ cech na decyzję modelu 
+                                </strong>
+                                <div style={{ marginTop: '15px' }}>
+                                    {selectedAlert.xai.map((item, idx) => (
+                                        <div key={idx} style={{ marginBottom: '12px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#475569', marginBottom: '5px', fontWeight: '500' }}>
+                                                <span>{item.cecha}</span>
+                                                <span style={{ color: item.kolor, fontWeight: '700' }}>+{item.wplyw}%</span>
+                                            </div>
+                                            <div style={{ width: '100%', height: '8px', background: '#E2E8F0', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${item.wplyw}%`, height: '100%', background: item.kolor, borderRadius: '4px' }}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <button
+                            className="btn-export"
+                            style={{ marginTop: '20px', width: '100%', justifyContent: 'center', background: '#2B3674' }}
+                            onClick={fetchGraphData}
+                        >
+                            <i className="fa-solid fa-network-wired"></i> Pokaż graf powiązań
+                        </button>
+                    </div>
+                </div>
+            )}
+            {showGraph && (
+                <div className="modal-overlay" onClick={() => setShowGraph(false)}>
+                    <div className="modal-content" style={{ width: '85vw', height: '85vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#0f172a' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ padding: '20px', background: '#1E3A8A', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0 }}><i className="fa-solid fa-diagram-project"></i> Interaktywna Sieć Transakcji</h3>
+                            <button className="close-btn" style={{ color: 'white' }} onClick={() => setShowGraph(false)}><i className="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div style={{ flex: 1, position: 'relative' }}>
+                            <ForceGraph2D
+                                graphData={graphData}
+                                nodeLabel="name"
+                                nodeColor={() => '#3b82f6'}
+                                linkColor={link => link.color}
+                                linkWidth={link => link.color === '#EF4444' ? 3 : 1}
+                                linkDirectionalArrowLength={6}
+                                linkDirectionalArrowRelPos={1}
+                                width={window.innerWidth * 0.85}
+                                height={window.innerHeight * 0.85 - 65}
+                            />
+                            <div style={{ position: 'absolute', bottom: 20, left: 20, background: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '8px', color: 'white', fontSize: '12px' }}>
+                                <div><span style={{ color: '#EF4444', fontWeight: 'bold' }}>—</span> Wykryte Anomalie / Cykle</div>
+                                <div><span style={{ color: '#475569', fontWeight: 'bold' }}>—</span> Normalne Transakcje</div>
+                            </div>
                         </div>
                     </div>
                 </div>

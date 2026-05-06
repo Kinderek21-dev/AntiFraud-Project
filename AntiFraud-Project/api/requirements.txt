@@ -6,3 +6,5 @@ pydantic
 pandas
 scikit-learn
 SQLAlchemy
+networkx
+shap

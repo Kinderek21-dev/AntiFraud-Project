@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import psycopg2
 import bcrypt
 import math
+import json
 
 app = FastAPI()
 
@@ -130,6 +131,8 @@ def get_alerts():
         cur.close()
         conn.close()
         
+        amounts = [float(row[2]) for row in results]
+        
         alerts = []
         for row in results:
             raw_score = float(row[3])
@@ -138,10 +141,14 @@ def get_alerts():
             if ui_score < CURRENT_THRESHOLD:
                 continue
                 
+            kwota = float(row[2])
             alert_type = "Nietypowa kwota transakcji"
-            if float(row[2]) < 5: alert_type = "Podejrzana mikropłatność"
-            elif float(row[2]) > 50000: alert_type = "Odbiorca wysokiego ryzyka"
-            elif float(row[2]) > 15000: alert_type = "Podejrzana dynamika operacji"
+            
+            if amounts.count(kwota) >= 3 and kwota > 100:
+                alert_type = "Wykryto Sieć Piorącą"
+            elif kwota < 5: alert_type = "Podejrzana mikropłatność"
+            elif kwota > 50000: alert_type = "Odbiorca wysokiego ryzyka"
+            elif kwota > 15000: alert_type = "Podejrzana dynamika operacji"
 
             alerts.append({
                 "id": f"ALR-2026-{str(row[0]).zfill(3)}",
@@ -159,7 +166,7 @@ def get_alerts_history():
         cur = conn.cursor()
         cur.execute("""
             SELECT t.uniqueid, TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD HH24:MI'), 
-                   t.kwota, w.ocena_anomali, t.id_konta_nadawcy, t.id_konta_odbiorcy, w.status
+                   t.kwota, w.ocena_anomali, t.id_konta_nadawcy, t.id_konta_odbiorcy, w.status, w.xai_raport
             FROM Transakcje t JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
             WHERE w.czy_podejrzana = true ORDER BY t.czas_transakcji DESC;
         """)
@@ -167,6 +174,7 @@ def get_alerts_history():
         cur.close()
         conn.close()
         
+        amounts = [float(row[2]) for row in results]
         alerts = []
         for row in results:
             raw_score = float(row[3])
@@ -176,9 +184,13 @@ def get_alerts_history():
             kwota = float(row[2])
             alert_type = "Nietypowa kwota transakcji"
             reason = f"Przelew na kwotę {kwota} PLN znacznie odbiega od profilu klienta."
-            if kwota < 5:
+            
+            if amounts.count(kwota) >= 3 and kwota > 100:
+                alert_type = "Wykryto Sieć Piorącą (Cykl)"
+                reason = f"Konto #{row[4]} Wykryto serię powiązanych transakcji na identyczną kwotę {kwota} PLN."
+            elif kwota < 5:
                 alert_type = "Podejrzana mikropłatność"
-                reason = f"Bardzo niska kwota ({kwota} PLN). Możliwe testowanie karty."
+                reason = f"Bardzo niska kwota ({kwota} PLN). Możliwe testowanie skradzionej karty."
             elif kwota > 50000:
                 alert_type = "Odbiorca wysokiego ryzyka"
                 reason = f"Olbrzymia kwota ({kwota} PLN). Ryzyko prania brudnych pieniędzy."
@@ -186,10 +198,19 @@ def get_alerts_history():
                 alert_type = "Podejrzana dynamika operacji"
                 reason = f"Nietypowo duży przelew ({kwota} PLN). Możliwe przejęcie konta."
 
+            xai_data = row[7]
+            if isinstance(xai_data, str):
+                xai_breakdown = json.loads(xai_data)
+            elif isinstance(xai_data, list):
+                xai_breakdown = xai_data
+            else:
+                xai_breakdown = []
+
             alerts.append({
                 "id": f"ALR-2026-{str(row[0]).zfill(3)}", "date": row[1], "type": alert_type,
                 "score": f"{ui_score:.2f}", "status": row[6], "kwota": kwota,
-                "nadawca": row[4], "odbiorca": row[5], "reason": reason
+                "nadawca": row[4], "odbiorca": row[5], "reason": reason,
+                "xai": xai_breakdown 
             })
             if len(alerts) >= 100: break
         return alerts
@@ -248,3 +269,41 @@ def get_statistics():
     except Exception as e:
         print(f"[API BŁĄD] Statystyki: {e}")
         return {"volumeData": [], "distributionData": []}
+
+@app.get("/api/graph")
+def get_graph_data():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.id_konta_nadawcy, t.id_konta_odbiorcy, t.kwota, 
+                   COALESCE(w.czy_podejrzana, false) as is_fraud
+            FROM Transakcje t
+            LEFT JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
+            ORDER BY t.czas_transakcji DESC LIMIT 100;
+        """)
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        nodes = set()
+        links = []
+        for row in results:
+            nadawca = str(row[0])
+            odbiorca = str(row[1])
+            kwota = float(row[2])
+            is_fraud = row[3]
+
+            nodes.add(nadawca)
+            nodes.add(odbiorca)
+            links.append({
+                "source": nadawca,
+                "target": odbiorca,
+                "value": kwota,
+                "color": "#EF4444" if is_fraud else "#475569" 
+            })
+
+        graph_nodes = [{"id": n, "name": f"Konto #{n}"} for n in nodes]
+        return {"nodes": graph_nodes, "links": links}
+    except Exception as e:
+        return {"error": str(e)}
