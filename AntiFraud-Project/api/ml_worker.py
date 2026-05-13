@@ -14,10 +14,13 @@ engine = create_engine(DB_URL)
 MODEL_PATH = "/app/models/moj_mozg_AI.joblib"
 
 NAZWY_CECH = {
-    'kwota': 'Nietypowa kwota przelewu',
+    'kwota': 'Duża kwota przelewu',
     'procent_salda': 'Wyczyszczenie dużej części salda',
     'velocity': 'Nienaturalna prędkość operacji',
-    'is_in_cycle': 'Udział w cyklu prania pieniędzy'
+    'is_in_cycle': 'Udział w cyklu prania pieniędzy',
+    'odchylenie_kwoty': 'Kwota drastycznie odbiega od nawyków',
+    'nietypowa_pora': 'Przelew zlecony w nietypowych godzinach',
+    'ryzyko_odbiorcy': 'Przelew do obcego / nowego odbiorcy'
 }
 
 def init_db():
@@ -34,60 +37,85 @@ def run_ml_job():
             SELECT 
                 t."uniqueid", t.kwota, k.saldo,
                 t.id_konta_nadawcy, t.id_konta_odbiorcy,
-                w.id_transkacji as is_evaluated
+                EXTRACT(HOUR FROM t.czas_transakcji) as godzina,
+                (SELECT COUNT(*) FROM Zaufani_Odbiorcy z WHERE z.id_nadawcy = t.id_konta_nadawcy AND z.id_odbiorcy = t.id_konta_odbiorcy) as is_trusted
             FROM Transakcje t
             JOIN Konta k ON t.id_konta_nadawcy = k."uniqueid"
             LEFT JOIN Wyniki_ML w ON t."uniqueid" = w.id_transkacji
-            ORDER BY t."uniqueid" DESC LIMIT 2000;
+            WHERE w.id_transkacji IS NULL
+            ORDER BY t."uniqueid" ASC LIMIT 2000;
         """
         df = pd.read_sql(query, engine)
-        do_oceny = df[df['is_evaluated'].isnull()].copy()
+        do_oceny = df.copy()
         
-        if len(do_oceny) < 10:
-            print(f"[ML] Tylko {len(do_oceny)} nowych transakcji.")
+        if len(do_oceny) < 5:
+            print(f"[ML] Brak nowych transakcji do oceny. Czekam...")
             return
+
+        stats_query = """
+            SELECT id_konta_nadawcy, 
+                   AVG(kwota) as srednia_kwota,
+                   AVG(EXTRACT(HOUR FROM czas_transakcji)) as srednia_godzina
+            FROM Transakcje
+            GROUP BY id_konta_nadawcy;
+        """
+        df_stats = pd.read_sql(stats_query, engine)
+        
+        df = df.merge(df_stats, on='id_konta_nadawcy', how='left')
+        
+        df['srednia_kwota'] = df['srednia_kwota'].fillna(df['kwota'])
+        df['srednia_godzina'] = df['srednia_godzina'].fillna(df['godzina'])
 
         df['procent_salda'] = df['kwota'] / (df['saldo'] + 0.01)
         velocity_map = df.groupby('id_konta_nadawcy').size().to_dict()
         df['velocity'] = df['id_konta_nadawcy'].map(velocity_map)
 
+        df['odchylenie_kwoty'] = df['kwota'] / (df['srednia_kwota'] + 0.01)
+        diff = np.abs(df['godzina'] - df['srednia_godzina'])
+        df['nietypowa_pora'] = np.minimum(diff, 24 - diff)
+        df['ryzyko_odbiorcy'] = df['is_trusted'].apply(lambda x: 0.0 if x > 0 else 1.0)
+
         G = nx.DiGraph()
         for _, row in df.iterrows():
-            G.add_edge(row['id_konta_nadawcy'], row['id_konta_odbiorcy'], trans_id=row['uniqueid'])
+            if row['kwota'] > 1000 or row['velocity'] >= 3:
+                G.add_edge(row['id_konta_nadawcy'], row['id_konta_odbiorcy'], trans_id=row['uniqueid'])
 
         podejrzane_transakcje = set()
-        for cykl in list(nx.simple_cycles(G)):
-            if len(cykl) >= 2:
-                for i in range(len(cykl)):
-                    u = cykl[i]
-                    v = cykl[(i + 1) % len(cykl)]
-                    edge_data = G.get_edge_data(u, v)
-                    if edge_data: podejrzane_transakcje.add(edge_data['trans_id'])
+        try:
+            for cykl in list(nx.simple_cycles(G)):
+                if len(cykl) >= 2:
+                    for i in range(len(cykl)):
+                        u = cykl[i]
+                        v = cykl[(i + 1) % len(cykl)]
+                        edge_data = G.get_edge_data(u, v)
+                        if edge_data: podejrzane_transakcje.add(edge_data['trans_id'])
+        except Exception: pass
 
         df['is_in_cycle'] = df['uniqueid'].apply(lambda x: 10.0 if x in podejrzane_transakcje else 0.0)
-        cechy = ['kwota', 'procent_salda', 'velocity', 'is_in_cycle']
+        
+        cechy = ['kwota', 'procent_salda', 'velocity', 'is_in_cycle', 'odchylenie_kwoty', 'nietypowa_pora', 'ryzyko_odbiorcy']
         X_all = df[cechy]
         
         model = IsolationForest(n_estimators=100, contamination=0.03, random_state=42)
         model.fit(X_all)
         joblib.dump(model, MODEL_PATH)
 
-        do_oceny['procent_salda'] = do_oceny['kwota'] / (do_oceny['saldo'] + 0.01)
-        do_oceny['velocity'] = do_oceny['id_konta_nadawcy'].map(velocity_map)
-        do_oceny['is_in_cycle'] = do_oceny['uniqueid'].apply(lambda x: 10.0 if x in podejrzane_transakcje else 0.0)
-        
-        X_nowe = do_oceny[cechy]
-        do_oceny['is_fraud'] = model.predict(X_nowe)             
-        do_oceny['anomaly_score'] = model.decision_function(X_nowe)
+        do_oceny['is_fraud'] = model.predict(X_all)             
+        do_oceny['anomaly_score'] = model.decision_function(X_all)
 
         print("[ML] Generuję matematyczne dowody XAI dla anomalii...")
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X_nowe)
+        shap_values = explainer.shap_values(X_all)
 
         print("[ML] Zapisuję wyniki do bazy danych...")
         with engine.begin() as conn:
             for index, row in do_oceny.iterrows():
-                czy_podejrzana = True if row['is_fraud'] == -1 else False
+                
+                if df.iloc[index]['is_trusted'] > 0:
+                    czy_podejrzana = False
+                else:
+                    czy_podejrzana = True if row['is_fraud'] == -1 else False
+                    
                 ocena = float(row['anomaly_score'])
                 id_t = int(row['uniqueid'])
                 
@@ -95,7 +123,6 @@ def run_ml_job():
                 if czy_podejrzana:
                     wplyw_cech = np.abs(shap_values[index]) 
                     suma_wplywow = np.sum(wplyw_cech)
-                    
                     if suma_wplywow > 0:
                         for idx_cechy, nazwa_cechy in enumerate(cechy):
                             wplyw_procent = round((wplyw_cech[idx_cechy] / suma_wplywow) * 100)
@@ -123,15 +150,15 @@ def run_ml_job():
                 """)
                 conn.execute(update_tx_query, {"status": nowy_status, "id_t": id_t})
                 
-        print("[ML] Zapisano pomyślnie.")
+        print("[ML] Zapisano pomyślnie partię transakcji.")
     except Exception as e:
         print(f"[ML] Wystąpił błąd: {e}")
 
 if __name__ == "__main__":
-    print("[ML] Start modułu Sztucznej Inteligencji")
+    print("[ML] Start modułu Sztucznej Inteligencji (Z Analizą Behawioralną)")
     os.makedirs("/app/models", exist_ok=True)
     init_db()
     
     while True:
         run_ml_job()
-        time.sleep(10)
+        time.sleep(5)
