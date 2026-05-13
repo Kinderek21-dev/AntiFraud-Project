@@ -3,6 +3,7 @@
 #include <ctime>
 #include <random> 
 #include <cmath>  
+#include <unordered_set>
 
 Generator::Generator() {
     imiona = {
@@ -58,12 +59,30 @@ Generator::Generator() {
     };
     srand(time(NULL));
 }
+std::string generujLosowyHash() {
+    const char znaki[] = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    std::string fake_hash = "$2a$12$"; 
+
+    for (int i = 0; i < 53; i++) {
+        fake_hash += znaki[rand() % 64];
+    }
+    return fake_hash;
+}
 
 std::vector<Konto> Generator::generujKonta(int ilosc) {
     std::vector<Konto> konta;
+    std::unordered_set<std::string> wygenerowane_loginy;
+
     for (int i = 0; i < ilosc; i++) {
         std::string imie = imiona[rand() % imiona.size()];
         std::string nazwisko = nazwiska[rand() % nazwiska.size()];
+        std::string login;
+        do {
+            login = imie + nazwisko + std::to_string(rand() % 100000);
+        } while (wygenerowane_loginy.find(login) != wygenerowane_loginy.end());
+        wygenerowane_loginy.insert(login);
+
+        std::string haslo_hash = generujLosowyHash();
 
         double saldo = 0.0;
         int typ_klienta = rand() % 100;
@@ -77,12 +96,10 @@ std::vector<Konto> Generator::generujKonta(int ilosc) {
         else {
             saldo = (rand() % 3000000) + 250000.0;
         }
-
-        konta.push_back({ imie + " " + nazwisko, saldo });
+        konta.push_back({ imie + " " + nazwisko, login, haslo_hash, saldo });
     }
     return konta;
 }
-
 
 std::vector<Transakcja> Generator::generujTransakcje(const std::vector<std::pair<int, double>>& konta_z_saldem, int ilosc) {
     std::vector<Transakcja> transakcje;

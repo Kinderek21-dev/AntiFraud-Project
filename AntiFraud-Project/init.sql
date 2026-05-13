@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE Administratorzy (
     UniqueID SERIAL PRIMARY KEY,
     login VARCHAR(50) UNIQUE NOT NULL,
@@ -8,10 +9,19 @@ CREATE TABLE Administratorzy (
 CREATE TABLE Konta (
     UniqueID SERIAL PRIMARY KEY,
     nazwa_wlasciciela VARCHAR(100) NOT NULL,
+    login VARCHAR(50) UNIQUE,
+    haslo_hash VARCHAR(255),
     saldo DECIMAL(15, 2) DEFAULT 0.00,
     waluta VARCHAR(3) DEFAULT 'PLN',
     data_utworzenia TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status VARCHAR(20) DEFAULT 'Aktywne'
+);
+
+CREATE TABLE Zaufani_Odbiorcy (
+    id_nadawcy INT REFERENCES Konta(UniqueID),
+    id_odbiorcy INT REFERENCES Konta(UniqueID),
+    data_dodania TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id_nadawcy, id_odbiorcy)
 );
 
 CREATE TABLE Transakcje (
@@ -52,3 +62,6 @@ CREATE TABLE Transakcje_Alerty (
 
 INSERT INTO Administratorzy (login, haslo_hash) 
 VALUES ('admin', crypt('admin123', gen_salt('bf')));
+
+INSERT INTO Konta (nazwa_wlasciciela, login, haslo_hash, saldo) 
+VALUES ('Jan Kowalski', 'janek', crypt('haslo123', gen_salt('bf')), 25000.00);

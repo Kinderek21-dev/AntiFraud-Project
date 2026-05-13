@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from sqlalchemy import text
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
@@ -8,6 +8,7 @@ import psycopg2
 import bcrypt
 import math
 import json
+import jwt 
 
 app = FastAPI()
 
@@ -18,7 +19,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 CURRENT_THRESHOLD = 0.85
+
+SECRET_KEY = "antifraud_super_secret_key"
+ALGORITHM = "HS256"
 
 def get_db_connection():
     return psycopg2.connect(
@@ -38,6 +43,160 @@ class StatusData(BaseModel):
 
 class SettingsData(BaseModel):
     threshold: float
+
+class TransferData(BaseModel):  
+    receiver_id: int
+    amount: float
+    sender_id: int
+
+class RegisterData(BaseModel):
+    login: str
+    password: str
+    name: str
+
+class UnblockData(BaseModel):
+    transaction_id: int
+    receiver_id: int
+    sender_id: int
+
+
+@app.post("/api/user/login")
+def login_user_portal(data: LoginData):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT uniqueid, haslo_hash, nazwa_wlasciciela FROM Konta WHERE login = %s;", (data.login,))
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not result:
+        raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło")
+
+    user_id, db_hash, user_name = result
+    
+    if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
+        expiration = datetime.utcnow() + timedelta(hours=1)
+        token = jwt.encode({
+            "user_id": user_id,
+            "exp": expiration
+        }, SECRET_KEY, algorithm=ALGORITHM)
+        
+        return {
+            "status": "success",
+            "token": token,
+            "user_id": user_id,
+            "user_name": user_name
+        }
+    
+    raise HTTPException(status_code=401, detail="Błędne hasło")
+
+@app.post("/api/user/register")
+def register_user(data: RegisterData):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        hashed_pw = bcrypt.hashpw(data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cur.execute("""
+            INSERT INTO Konta (nazwa_wlasciciela, login, haslo_hash, saldo) 
+            VALUES (%s, %s, %s, 10000.00) RETURNING uniqueid;
+        """, (data.name, data.login, hashed_pw))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"status": "success", "user_id": new_id}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="Login jest już zajęty lub wystąpił błąd bazy")
+    finally:
+        cur.close()
+        conn.close()
+
+@app.get("/api/user/{user_id}/dashboard")
+def get_user_dashboard(user_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("SELECT saldo FROM Konta WHERE uniqueid = %s;", (user_id,))
+        saldo_row = cur.fetchone()
+        saldo = float(saldo_row[0]) if saldo_row else 0.0
+
+        cur.execute("""
+            SELECT uniqueid, id_konta_nadawcy, id_konta_odbiorcy, kwota, 
+                   TO_CHAR(czas_transakcji, 'YYYY-MM-DD HH24:MI'), status_operacji, status_analizy
+            FROM Transakcje 
+            WHERE id_konta_nadawcy = %s OR id_konta_odbiorcy = %s
+            ORDER BY czas_transakcji DESC LIMIT 10;
+        """, (user_id, user_id))
+        
+        history = []
+        for row in cur.fetchall():
+            is_sender = (row[1] == user_id)
+            typ = "Wychodzący" if is_sender else "Przychodzący"
+            
+            history.append({
+                "id": row[0],
+                "typ": typ,
+                "kwota": float(row[3]),
+                "data": row[4],
+                "status_operacji": row[5],
+                "status_analizy": row[6],
+                "kontrahent": row[2] if is_sender else row[1]
+            })
+            
+        cur.close()
+        conn.close()
+        return {"saldo": saldo, "history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/transfer")
+def make_transfer(data: TransferData):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("SELECT saldo FROM Konta WHERE uniqueid = %s;", (data.sender_id,))
+        saldo_row = cur.fetchone()
+        if not saldo_row or float(saldo_row[0]) < data.amount:
+            raise HTTPException(status_code=400, detail="Brak wystarczających środków na koncie.")
+
+        cur.execute("""
+            INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy)
+            VALUES (%s, %s, %s, 'Zrealizowana', 'Oczekujaca') RETURNING uniqueid;
+        """, (data.sender_id, data.receiver_id, data.amount))
+        new_id = cur.fetchone()[0]
+
+        cur.execute("UPDATE Konta SET saldo = saldo - %s WHERE uniqueid = %s;", (data.amount, data.sender_id))
+        cur.execute("UPDATE Konta SET saldo = saldo + %s WHERE uniqueid = %s;", (data.amount, data.receiver_id))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {"status": "sent", "transaction_id": new_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/unblock")
+def unblock_transaction(data: UnblockData):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("UPDATE Transakcje SET status_analizy = 'Czysty' WHERE uniqueid = %s;", (data.transaction_id,))
+        
+        cur.execute("""
+            INSERT INTO Zaufani_Odbiorcy (id_nadawcy, id_odbiorcy) 
+            VALUES (%s, %s) ON CONFLICT DO NOTHING;
+        """, (data.sender_id, data.receiver_id))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {"status": "success", "message": "Odblokowano i dodano do zaufanych"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/login")
 def login_user(data: LoginData):

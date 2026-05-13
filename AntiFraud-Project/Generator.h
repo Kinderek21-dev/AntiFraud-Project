@@ -4,6 +4,8 @@
 
 struct Konto {
     std::string nazwa_wlasciciela;
+    std::string login;
+    std::string haslo_hash;
     double saldo;
 };
 

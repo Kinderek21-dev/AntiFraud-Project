@@ -69,5 +69,8 @@
     <None Include="frontend-react\src\TransactionStatistics.jsx">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="frontend-react\src\ClientPortal.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

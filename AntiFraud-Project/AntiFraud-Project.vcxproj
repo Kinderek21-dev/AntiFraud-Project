@@ -137,6 +137,7 @@
     <None Include="api\ml_worker.py" />
     <None Include="frontend-react\src\AmlAlerts.jsx" />
     <None Include="frontend-react\src\App.jsx" />
+    <None Include="frontend-react\src\ClientPortal.jsx" />
     <None Include="frontend-react\src\Dashboard.jsx" />
     <None Include="frontend-react\src\Login.jsx" />
     <None Include="frontend-react\src\main.jsx" />

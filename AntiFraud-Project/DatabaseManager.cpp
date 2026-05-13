@@ -12,7 +12,11 @@ DatabaseManager::DatabaseManager(const std::string& conn_str) : C(conn_str) {
 void DatabaseManager::zapiszKonta(const std::vector<Konto>& konta) {
     pqxx::work W(C);
     for (const auto& k : konta) {
-        std::string sql = "INSERT INTO Konta (nazwa_wlasciciela, saldo, waluta) VALUES ('" + k.nazwa_wlasciciela + "', " + std::to_string(k.saldo) + ", 'PLN');";
+        std::string sql = "INSERT INTO Konta (nazwa_wlasciciela, login, haslo_hash, saldo, waluta) VALUES ('"
+            + k.nazwa_wlasciciela + "', '"
+            + k.login + "', '"
+            + k.haslo_hash + "', "
+            + std::to_string(k.saldo) + ", 'PLN');";
         W.exec(sql);
     }
     W.commit();

@@ -59,9 +59,12 @@ export default function AmlAlerts() {
         a.click();
     };
 
-    const filteredAlerts = alerts.filter(a => a.id.toLowerCase().includes(searchTerm.toLowerCase()) || a.type.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const styles = `
+    const filteredAlerts = alerts.filter(a =>
+        a.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(a.nadawca).includes(searchTerm) ||
+        String(a.odbiorca).includes(searchTerm)
+    );    const styles = `
         .dashboard-body { display: flex; height: 100vh; background-color: #F4F7FE; color: #2B3674; width: 100vw; overflow: hidden; }
         .sidebar { width: 260px; background-color: #1E3A8A; color: white; display: flex; flex-direction: column; padding: 30px 20px; flex-shrink: 0; }
         .logo { font-size: 24px; font-weight: bold; margin-bottom: 40px; display: flex; align-items: center; gap: 10px; }

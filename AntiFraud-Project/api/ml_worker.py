@@ -117,6 +117,12 @@ def run_ml_job():
                 """)
                 conn.execute(insert_query, {"id_t": id_t, "ocena": ocena, "czy_pod": czy_podejrzana, "xai": xai_json})
                 
+                nowy_status = 'Zablokowana' if czy_podejrzana else 'Czysty'
+                update_tx_query = text("""
+                    UPDATE Transakcje SET status_analizy = :status WHERE uniqueid = :id_t;
+                """)
+                conn.execute(update_tx_query, {"status": nowy_status, "id_t": id_t})
+                
         print("[ML] Zapisano pomyślnie.")
     except Exception as e:
         print(f"[ML] Wystąpił błąd: {e}")
