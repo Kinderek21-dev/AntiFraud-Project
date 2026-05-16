@@ -1,14 +1,13 @@
-from fastapi import APIRouter, Header
-from sqlalchemy import text
-from datetime import datetime, timedelta
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import psycopg2
 import bcrypt
-import math
 import json
-import jwt 
+import jwt
+from datetime import datetime, timedelta
+import asyncio
 
 app = FastAPI()
 
@@ -21,7 +20,6 @@ app.add_middleware(
 )
 
 CURRENT_THRESHOLD = 0.85
-
 SECRET_KEY = "antifraud_super_secret_key"
 ALGORITHM = "HS256"
 
@@ -44,11 +42,6 @@ class StatusData(BaseModel):
 class SettingsData(BaseModel):
     threshold: float
 
-class TransferData(BaseModel):  
-    receiver_id: int
-    amount: float
-    sender_id: int
-
 class RegisterData(BaseModel):
     login: str
     password: str
@@ -58,6 +51,66 @@ class UnblockData(BaseModel):
     transaction_id: int
     receiver_id: int
     sender_id: int
+
+class TransferData(BaseModel):
+    sender_id: int
+    amount: float
+    receiver_id: Optional[int] = None
+    receiver_name: Optional[str] = None
+    data_wykonania: Optional[str] = None
+    typ_przelewu: Optional[str] = "natychmiastowy"
+
+
+async def worker_przelewow_oczekujacych():
+    while True:
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+
+            czas_polska = datetime.utcnow() + timedelta(hours=2)
+            teraz = czas_polska.strftime("%Y-%m-%d %H:%M:%S")
+            
+            cur.execute("""
+                SELECT uniqueid, id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, czas_transakcji
+                FROM Transakcje
+                WHERE status_operacji IN ('Zaplanowana', 'Cykliczna')
+                  AND czas_transakcji <= %s;
+            """, (teraz,))
+            
+            zlecenia = cur.fetchall()
+
+            for tx in zlecenia:
+                tx_id, nadawca, odbiorca, kwota, typ_operacji, stary_czas = tx
+                
+                cur.execute("""
+                    UPDATE Konta SET saldo = saldo - %s 
+                    WHERE uniqueid = %s AND saldo >= %s RETURNING uniqueid;
+                """, (kwota, nadawca, kwota))
+                czy_pobrano = cur.fetchone()
+
+                if czy_pobrano:
+                    cur.execute("UPDATE Konta SET saldo = saldo + %s WHERE uniqueid = %s;", (kwota, odbiorca))
+                    cur.execute("UPDATE Transakcje SET status_operacji = 'Zrealizowana' WHERE uniqueid = %s;", (tx_id,))
+                    
+                    if typ_operacji == 'Cykliczna':
+                        cur.execute("""
+                            INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy, czas_transakcji)
+                            VALUES (%s, %s, %s, 'Cykliczna', 'Oczekujaca', %s + INTERVAL '30 days');
+                        """, (nadawca, odbiorca, kwota, stary_czas))
+                else:
+                    cur.execute("UPDATE Transakcje SET status_operacji = 'Odrzucona (Brak Srodkow)' WHERE uniqueid = %s;", (tx_id,))
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Wystąpił problem: {e}")
+        
+        await asyncio.sleep(10)
+
+@app.on_event("startup")
+async def uruchom_workera():
+    asyncio.create_task(worker_przelewow_oczekujacych())
 
 
 @app.post("/api/user/login")
@@ -125,14 +178,13 @@ def get_user_dashboard(user_id: int):
                    TO_CHAR(czas_transakcji, 'YYYY-MM-DD HH24:MI'), status_operacji, status_analizy
             FROM Transakcje 
             WHERE id_konta_nadawcy = %s OR id_konta_odbiorcy = %s
-            ORDER BY czas_transakcji DESC LIMIT 10;
+            ORDER BY czas_transakcji DESC LIMIT 100;
         """, (user_id, user_id))
         
         history = []
         for row in cur.fetchall():
             is_sender = (row[1] == user_id)
             typ = "Wychodzący" if is_sender else "Przychodzący"
-            
             history.append({
                 "id": row[0],
                 "typ": typ,
@@ -155,48 +207,92 @@ def make_transfer(data: TransferData):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        cur.execute("SELECT saldo FROM Konta WHERE uniqueid = %s;", (data.sender_id,))
-        saldo_row = cur.fetchone()
-        if not saldo_row or float(saldo_row[0]) < data.amount:
-            raise HTTPException(status_code=400, detail="Brak wystarczających środków na koncie.")
+        if data.amount <= 0:
+            raise HTTPException(status_code=400, detail="Błąd: Kwota przelewu musi być większa niż 0.00 PLN.")
 
-        cur.execute("""
-            INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy)
-            VALUES (%s, %s, %s, 'Zrealizowana', 'Oczekujaca') RETURNING uniqueid;
-        """, (data.sender_id, data.receiver_id, data.amount))
-        new_id = cur.fetchone()[0]
+        id_odbiorcy_koncowy = None
+        if data.receiver_id:
+            cur.execute("SELECT uniqueid FROM Konta WHERE uniqueid = %s;", (data.receiver_id,))
+            wynik = cur.fetchone()
+            if wynik: id_odbiorcy_koncowy = wynik[0]
+        elif data.receiver_name:
+            cur.execute("SELECT uniqueid FROM Konta WHERE nazwa_wlasciciela = %s;", (data.receiver_name,))
+            wynik = cur.fetchone()
+            if wynik: id_odbiorcy_koncowy = wynik[0]
 
-        cur.execute("UPDATE Konta SET saldo = saldo - %s WHERE uniqueid = %s;", (data.amount, data.sender_id))
-        cur.execute("UPDATE Konta SET saldo = saldo + %s WHERE uniqueid = %s;", (data.amount, data.receiver_id))
+        if id_odbiorcy_koncowy is None:
+            raise HTTPException(status_code=404, detail="Błąd operacji: Odbiorca nie istnieje.")
+
+        teraz_polska = datetime.utcnow() + timedelta(hours=2)
+        czy_przyszly = False
+        data_sql_zformatowana = None
         
-        conn.commit()
-        cur.close()
-        conn.close()
+        if data.data_wykonania and data.typ_przelewu != "natychmiastowy":
+            try:
+                data_obiekt = datetime.strptime(data.data_wykonania, "%Y-%m-%dT%H:%M")
+                if data_obiekt > teraz_polska:
+                    czy_przyszly = True
+                data_sql_zformatowana = data_obiekt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Błąd formatu daty i czasu.")
+
+        if czy_przyszly:
+            status_operacji_koncowy = "Zaplanowana" if data.typ_przelewu == "zaplanowany" else "Cykliczna"
+            cur.execute("""
+                INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy, czas_transakcji)
+                VALUES (%s, %s, %s, %s, 'Oczekujaca', %s) RETURNING uniqueid;
+            """, (data.sender_id, id_odbiorcy_koncowy, data.amount, status_operacji_koncowy, data_sql_zformatowana))
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            return {"status": "scheduled", "transaction_id": new_id, "detail": f"Zlecenie zaprogramowane na {data_sql_zformatowana}."}
+        else:
+            cur.execute("""
+                UPDATE Konta 
+                SET saldo = saldo - %s 
+                WHERE uniqueid = %s AND saldo >= %s
+                RETURNING uniqueid;
+            """, (data.amount, data.sender_id, data.amount))
+            
+            weryfikacja_salda = cur.fetchone()
+            if not weryfikacja_salda:
+                raise HTTPException(status_code=400, detail="Odmowa: Brak wystarczających środków na koncie!")
+
+            cur.execute("UPDATE Konta SET saldo = saldo + %s WHERE uniqueid = %s;", (data.amount, id_odbiorcy_koncowy))
+            cur.execute("""
+                INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy)
+                VALUES (%s, %s, %s, 'Zrealizowana', 'Oczekujaca') RETURNING uniqueid;
+            """, (data.sender_id, id_odbiorcy_koncowy, data.amount))
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            return {"status": "sent", "transaction_id": new_id, "detail": "Przelew zrealizowany natychmiastowo."}
         
-        return {"status": "sent", "transaction_id": new_id}
+    except HTTPException as he:
+        if 'conn' in locals(): conn.rollback()
+        raise he
     except Exception as e:
+        if 'conn' in locals(): conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
 
 @app.post("/api/user/unblock")
 def unblock_transaction(data: UnblockData):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
         cur.execute("UPDATE Transakcje SET status_analizy = 'Czysty' WHERE uniqueid = %s;", (data.transaction_id,))
-        
         cur.execute("""
             INSERT INTO Zaufani_Odbiorcy (id_nadawcy, id_odbiorcy) 
             VALUES (%s, %s) ON CONFLICT DO NOTHING;
         """, (data.sender_id, data.receiver_id))
-        
         conn.commit()
         cur.close()
         conn.close()
-        
         return {"status": "success", "message": "Odblokowano i dodano do zaufanych"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/login")
 def login_user(data: LoginData):
@@ -291,20 +387,16 @@ def get_alerts():
         conn.close()
         
         amounts = [float(row[2]) for row in results]
-        
         alerts = []
         for row in results:
             raw_score = float(row[3])
             ui_score = round(min(0.99, abs(raw_score) * 2.5 + 0.5), 2)
-            
-            if ui_score < CURRENT_THRESHOLD:
-                continue
+            if ui_score < CURRENT_THRESHOLD: continue
                 
             kwota = float(row[2])
             alert_type = "Nietypowa kwota transakcji"
             
-            if amounts.count(kwota) >= 3 and kwota > 100:
-                alert_type = "Wykryto Sieć Piorącą"
+            if amounts.count(kwota) >= 3 and kwota > 100: alert_type = "Wykryto Sieć Piorącą"
             elif kwota < 5: alert_type = "Podejrzana mikropłatność"
             elif kwota > 50000: alert_type = "Odbiorca wysokiego ryzyka"
             elif kwota > 15000: alert_type = "Podejrzana dynamika operacji"
@@ -380,7 +472,6 @@ def get_statistics():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
         cur.execute("""
             SELECT DATE(czas_transakcji) as data_dnia, SUM(kwota) as suma_kwot
             FROM Transakcje
@@ -407,10 +498,8 @@ def get_statistics():
         normalne = 0
         anomalie = 0
         for row in dist_result:
-            if row[0] == True: 
-                anomalie = row[1]
-            else:
-                normalne = row[1]
+            if row[0] == True: anomalie = row[1]
+            else: normalne = row[1]
 
         cur.close()
         conn.close()
@@ -420,13 +509,8 @@ def get_statistics():
             {"name": "Anomalie", "value": anomalie}
         ]
 
-        return {
-            "volumeData": volume_data,
-            "distributionData": distribution_data
-        }
-        
+        return {"volumeData": volume_data, "distributionData": distribution_data}
     except Exception as e:
-        print(f"[API BŁĄD] Statystyki: {e}")
         return {"volumeData": [], "distributionData": []}
 
 @app.get("/api/graph")

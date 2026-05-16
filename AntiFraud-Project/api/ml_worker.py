@@ -42,7 +42,7 @@ def run_ml_job():
             FROM Transakcje t
             JOIN Konta k ON t.id_konta_nadawcy = k."uniqueid"
             LEFT JOIN Wyniki_ML w ON t."uniqueid" = w.id_transkacji
-            WHERE w.id_transkacji IS NULL
+            WHERE w.id_transkacji IS NULL AND t.status_operacji = 'Zrealizowana'
             ORDER BY t."uniqueid" ASC LIMIT 2000;
         """
         df = pd.read_sql(query, engine)
