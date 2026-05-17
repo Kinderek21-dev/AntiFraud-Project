@@ -38,22 +38,25 @@ def run_ml_job():
                 t."uniqueid", t.kwota, k.saldo,
                 t.id_konta_nadawcy, t.id_konta_odbiorcy,
                 EXTRACT(HOUR FROM t.czas_transakcji) as godzina,
+                w.id_transkacji as is_analyzed,
                 (SELECT COUNT(*) FROM Zaufani_Odbiorcy z WHERE z.id_nadawcy = t.id_konta_nadawcy AND z.id_odbiorcy = t.id_konta_odbiorcy) as is_trusted
             FROM Transakcje t
             JOIN Konta k ON t.id_konta_nadawcy = k."uniqueid"
             LEFT JOIN Wyniki_ML w ON t."uniqueid" = w.id_transkacji
-            WHERE w.id_transkacji IS NULL AND t.status_operacji = 'Zrealizowana'
-            ORDER BY t."uniqueid" ASC LIMIT 2000;
+            WHERE t.status_operacji = 'Zrealizowana'
+            ORDER BY t.czas_transakcji DESC LIMIT 1000;
         """
         df = pd.read_sql(query, engine)
-        do_oceny = df.copy()
         
-        if len(do_oceny) < 5:
+        do_oceny = df[df['is_analyzed'].isnull()].copy()
+        
+        if len(do_oceny) < 1:
             print(f"[ML] Brak nowych transakcji do oceny. Czekam...")
             return
 
         stats_query = """
             SELECT id_konta_nadawcy, 
+                   COUNT(uniqueid) as total_tx,
                    AVG(kwota) as srednia_kwota,
                    AVG(EXTRACT(HOUR FROM czas_transakcji)) as srednia_godzina
             FROM Transakcje
@@ -65,8 +68,10 @@ def run_ml_job():
         
         df['srednia_kwota'] = df['srednia_kwota'].fillna(df['kwota'])
         df['srednia_godzina'] = df['srednia_godzina'].fillna(df['godzina'])
+        df['total_tx'] = df['total_tx'].fillna(1) 
 
         df['procent_salda'] = df['kwota'] / (df['saldo'] + 0.01)
+        
         velocity_map = df.groupby('id_konta_nadawcy').size().to_dict()
         df['velocity'] = df['id_konta_nadawcy'].map(velocity_map)
 
@@ -94,25 +99,31 @@ def run_ml_job():
         df['is_in_cycle'] = df['uniqueid'].apply(lambda x: 10.0 if x in podejrzane_transakcje else 0.0)
         
         cechy = ['kwota', 'procent_salda', 'velocity', 'is_in_cycle', 'odchylenie_kwoty', 'nietypowa_pora', 'ryzyko_odbiorcy']
+        
         X_all = df[cechy]
         
-        model = IsolationForest(n_estimators=100, contamination=0.03, random_state=42)
-        model.fit(X_all)
+        model = IsolationForest(n_estimators=100, contamination=0.04, random_state=42)
+        model.fit(X_all.drop_duplicates()) 
         joblib.dump(model, MODEL_PATH)
 
-        do_oceny['is_fraud'] = model.predict(X_all)             
-        do_oceny['anomaly_score'] = model.decision_function(X_all)
+        do_oceny = df[df['is_analyzed'].isnull()].copy()
+        X_do_oceny = do_oceny[cechy]
+        
+        do_oceny['is_fraud'] = model.predict(X_do_oceny)             
+        do_oceny['anomaly_score'] = model.decision_function(X_do_oceny)
 
         print("[ML] Generuję matematyczne dowody XAI dla anomalii...")
         explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X_all)
+        shap_values = explainer.shap_values(X_do_oceny)
 
         print("[ML] Zapisuję wyniki do bazy danych...")
         with engine.begin() as conn:
-            for index, row in do_oceny.iterrows():
+            for i, (orig_index, row) in enumerate(do_oceny.iterrows()):
                 
-                if df.iloc[index]['is_trusted'] > 0:
+                if row['is_trusted'] > 0:
                     czy_podejrzana = False
+                elif row['total_tx'] <= 3:
+                    czy_podejrzana = True if (row['kwota'] > 15000 or row['procent_salda'] > 0.8) else False
                 else:
                     czy_podejrzana = True if row['is_fraud'] == -1 else False
                     
@@ -121,7 +132,7 @@ def run_ml_job():
                 
                 xai_raport = []
                 if czy_podejrzana:
-                    wplyw_cech = np.abs(shap_values[index]) 
+                    wplyw_cech = np.abs(shap_values[i]) 
                     suma_wplywow = np.sum(wplyw_cech)
                     if suma_wplywow > 0:
                         for idx_cechy, nazwa_cechy in enumerate(cechy):
@@ -155,7 +166,7 @@ def run_ml_job():
         print(f"[ML] Wystąpił błąd: {e}")
 
 if __name__ == "__main__":
-    print("[ML] Start modułu Sztucznej Inteligencji (Z Analizą Behawioralną)")
+    print("[ML] Start modułu Sztucznej Inteligencji ")
     os.makedirs("/app/models", exist_ok=True)
     init_db()
     
