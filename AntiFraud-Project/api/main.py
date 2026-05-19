@@ -60,6 +60,9 @@ class TransferData(BaseModel):
     data_wykonania: Optional[str] = None
     typ_przelewu: Optional[str] = "natychmiastowy"
 
+class AdminApproveData(BaseModel):
+    admin_id: int
+
 
 async def worker_przelewow_oczekujacych():
     while True:
@@ -550,3 +553,70 @@ def get_graph_data():
         return {"nodes": graph_nodes, "links": links}
     except Exception as e:
         return {"error": str(e)}
+@app.get("/api/admin/transakcje/wszystkie")
+def get_global_ledger():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT uniqueid, id_konta_nadawcy, id_konta_odbiorcy, kwota, 
+                   TO_CHAR(czas_transakcji, 'YYYY-MM-DD HH24:MI:SS'), status_operacji, status_analizy
+            FROM Transakcje
+            ORDER BY czas_transakcji DESC 
+            LIMIT 500;
+        """)
+        
+        ledger = []
+        for row in cur.fetchall():
+            ledger.append({
+                "id": row[0],
+                "nadawca": row[1],
+                "odbiorca": row[2],
+                "kwota": float(row[3]),
+                "data": row[4],
+                "status_operacji": row[5],
+                "status_analizy": row[6]
+            })
+            
+        cur.close()
+        conn.close()
+        return ledger
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd odczytu bazy: {str(e)}")
+
+
+@app.post("/api/admin/alerts/{tx_id}/approve")
+def admin_approve_transaction(tx_id: int, data: AdminApproveData):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("BEGIN;")
+        
+        cur.execute("""
+            UPDATE Transakcje 
+            SET status_analizy = 'Zatwierdzona_Recznie' 
+            WHERE uniqueid = %s;
+        """, (tx_id,))
+        
+        cur.execute("""
+            UPDATE Wyniki_ML 
+            SET status = 'Zatwierdzona_Recznie' 
+            WHERE id_transkacji = %s;
+        """, (tx_id,))
+        
+        cur.execute("""
+            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja)
+            VALUES (%s, %s, 'MANUAL_APPROVE');
+        """, (data.admin_id, tx_id))
+        
+        conn.commit()
+        return {"status": "success", "message": "Przelew zatwierdzony, audyt zapisany."}
+        
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd transakcji SQL (Rollback): {str(e)}")
+    finally:
+        cur.close()
+        conn.close()
