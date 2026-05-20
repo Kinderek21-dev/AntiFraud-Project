@@ -5,6 +5,7 @@ import AmlAlerts from './AmlAlerts';
 import Settings from './Settings';
 import TransactionStatistics from './TransactionStatistics'; 
 import ClientPortal from './ClientPortal';
+import AllTransactions from './AllTransactions';
 function App() {
   return (
     <BrowserRouter>
@@ -16,6 +17,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="" element={<Navigate to="/" />} />
         <Route path="/klient" element={<ClientPortal />} />
+        <Route path="/transactions" element={<AllTransactions />} />
       </Routes>
     </BrowserRouter>
   );

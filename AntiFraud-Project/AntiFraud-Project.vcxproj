@@ -135,6 +135,7 @@
   <ItemGroup>
     <None Include="api\main.py" />
     <None Include="api\ml_worker.py" />
+    <None Include="frontend-react\src\AllTransactions.jsx" />
     <None Include="frontend-react\src\AmlAlerts.jsx" />
     <None Include="frontend-react\src\App.jsx" />
     <None Include="frontend-react\src\ClientPortal.jsx" />

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 
-export default function AmlAlerts() {
+export default function AllTransactions() {
+
     const navigate = useNavigate();
     const [alerts, setAlerts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -10,7 +11,7 @@ export default function AmlAlerts() {
     const [showGraph, setShowGraph] = useState(false);
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
 
-    const [riskFilter, setRiskFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
 
@@ -27,7 +28,7 @@ export default function AmlAlerts() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch('http://localhost:8000/api/alerts/history');
+            const res = await fetch('http://localhost:8000/api/admin/transakcje/wszystkie');
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) setAlerts(data);
@@ -39,53 +40,59 @@ export default function AmlAlerts() {
         fetchHistory();
     }, []);
 
-    const handleStatusChange = async (id, newStatus) => {
-        setAlerts(alerts.map(alert => alert.id === id ? { ...alert, status: newStatus } : alert));
+    const handleManualApprove = async (txId) => {
+        if (!window.confirm(`Czy na pewno chcesz ręcznie zatwierdzić i odblokować przelew #${txId}?`)) return;
         try {
-            await fetch(`http://localhost:8000/api/alerts/${id}/status`, {
+            const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus })
+                body: JSON.stringify({ admin_id: 1 }) 
             });
-        } catch (error) { console.error("Błąd zapisu statusu:", error); }
+            if (res.ok) {
+                alert("Przelew został odblokowany! Ślad w audycie zapisany.");
+                fetchHistory();
+            } else {
+                alert("Błąd podczas zatwierdzania.");
+            }
+        } catch (error) { console.error("Błąd:", error); }
     };
 
     const filteredAlerts = alerts.filter(a => {
         const matchSearch =
-            a.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            a.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(a.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(a.nadawca).includes(searchTerm) ||
             String(a.odbiorca).includes(searchTerm);
 
-        let matchRisk = true;
-        const score = parseFloat(a.score);
-        if (riskFilter === 'critical') matchRisk = score >= 0.90;
-        if (riskFilter === 'high') matchRisk = score >= 0.80;
+        let matchStatus = true;
+        if (statusFilter !== 'all') {
+            matchStatus = a.status_analizy === statusFilter || a.status_operacji === statusFilter;
+        }
 
         let matchDateFrom = true;
         let matchDateTo = true;
-        const alertDate = new Date(a.date);
+        const alertDate = new Date(a.data || a.date); 
         if (dateFrom) matchDateFrom = alertDate >= new Date(dateFrom);
         if (dateTo) matchDateTo = alertDate <= new Date(dateTo + 'T23:59:59');
 
-        return matchSearch && matchRisk && matchDateFrom && matchDateTo;
+        return matchSearch && matchStatus && matchDateFrom && matchDateTo;
     });
 
     const exportToCSV = () => {
-        const headers = ["ID Alertu", "Data", "Typ Alertu", "Wynik (ML)", "Status", "Kwota (PLN)", "Konto Nadawcy", "Konto Odbiorcy"];
+        const headers = ["ID Transakcji", "Data", "Nadawca", "Odbiorca", "Kwota (PLN)", "Realizacja", "Werdykt AML"];
         const csvRows = [headers.join(",")];
         filteredAlerts.forEach(a => {
-            csvRows.push(`${a.id},${a.date},"${a.type}",${a.score},${a.status},${a.kwota},${a.nadawca},${a.odbiorca}`);
+            csvRows.push(`${a.id},${a.data},${a.nadawca},${a.odbiorca},${a.kwota},${a.status_operacji},${a.status_analizy}`);
         });
         const blob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `AntiFraud_Raport_Sledczy_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `AntiFraud_Ksiega_Glowna_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
     };
 
     const styles = `
+        /* (Style zostają w 100% bez zmian!) */
         .dashboard-body { display: flex; height: 100vh; background-color: #F4F7FE; color: #2B3674; width: 100vw; overflow: hidden; }
         .sidebar { width: 260px; background-color: #1E3A8A; color: white; display: flex; flex-direction: column; padding: 30px 20px; flex-shrink: 0; }
         .logo { font-size: 24px; font-weight: bold; margin-bottom: 40px; display: flex; align-items: center; gap: 10px; }
@@ -96,7 +103,6 @@ export default function AmlAlerts() {
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .page-title { font-size: 24px; font-weight: 700; color: #1E3A8A; }
         
-        /* Zmieniony pasek filtrów */
         .filters-bar { background: white; padding: 20px; border-radius: 15px; display: flex; gap: 20px; align-items: flex-end; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); flex-wrap: wrap; }
         .filter-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 180px; }
         .filter-group label { font-size: 12px; font-weight: 600; color: #A3AED0; text-transform: uppercase; }
@@ -128,6 +134,9 @@ export default function AmlAlerts() {
         .detail-label { font-size: 12px; color: #A3AED0; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
         .detail-value { font-size: 15px; color: #2B3674; font-weight: 500; }
         .reason-box { background: #FEF2F2; border-left: 4px solid #EF4444; padding: 15px; border-radius: 4px; margin-top: 20px; color: #991B1B; font-size: 14px; font-weight: 500;}
+        /* 🟢 ZMIANA: Dodany jeden styl guzika zatwierdzania pod guzikiem "Szczegóły" */
+        .btn-approve { padding: 8px 16px; border-radius: 8px; border: none; color: white; background: #10B981; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; margin-left: 10px; }
+        .btn-approve:hover { background: #059669; }
     `;
 
     return (
@@ -137,9 +146,11 @@ export default function AmlAlerts() {
             <aside className="sidebar">
                 <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
                 <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
-                <div className="nav-item active"><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
+                <div className="nav-item" onClick={() => navigate('/alerts')}><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
+
+                <div className="nav-item active"><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
+
                 <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
-                <div className="nav-item" onClick={() => navigate('/transactions')}><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
                 <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
                 <div className="sidebar-bottom">
                     <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
@@ -149,7 +160,7 @@ export default function AmlAlerts() {
 
             <main className="main-content">
                 <div className="page-header">
-                    <div className="page-title">Historia Alertów AML</div>
+                    <div className="page-title">Globalna Księga Transakcji</div>
                     <button className="btn-export" onClick={exportToCSV}>
                         <i className="fa-solid fa-download"></i> Eksportuj Raport CSV
                     </button>
@@ -160,16 +171,18 @@ export default function AmlAlerts() {
                         <label>Wyszukaj w bazie</label>
                         <div className="search-box">
                             <i className="fa-solid fa-magnifying-glass" style={{ color: '#A3AED0' }}></i>
-                            <input type="text" placeholder="ID konta, alertu lub typ..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                            <input type="text" placeholder="ID konta lub transakcji..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                         </div>
                     </div>
 
                     <div className="filter-group">
-                        <label>Poziom Ryzyka</label>
-                        <select className="filter-input" value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)}>
+                        <label>Filtruj Status</label>
+                        <select className="filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                             <option value="all">Wszystkie wykryte</option>
-                            <option value="high">Wysokie ryzyko (≥ 0.80)</option>
-                            <option value="critical">Krytyczne oszustwa (≥ 0.90)</option>
+                            <option value="Zrealizowana">Zrealizowane</option>
+                            <option value="Zaplanowana">Zaplanowane</option>
+                            <option value="Zablokowana">Zablokowane AML</option>
+                            <option value="Zatwierdzona_Recznie">Odblokowane Ręcznie</option>
                         </select>
                     </div>
 
@@ -188,32 +201,40 @@ export default function AmlAlerts() {
                     <table className="alerts-table">
                         <thead>
                             <tr>
-                                <th>ID Alertu</th>
-                                <th>Data utworzenia</th>
-                                <th>Typ Alertu</th>
-                                <th>Wynik (ML)</th>
-                                <th>Status</th>
+                                <th>ID Transakcji</th>
+                                <th>Czas</th>
+                                <th>Konta (Nadawca - Odbiorca)</th>
+                                <th>Kwota</th>
+                                <th>Realizacja</th>
+                                <th>Werdykt AML</th>
                                 <th>Akcja</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredAlerts.length === 0 ? (
-                                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: '#A3AED0' }}>Brak alertów spełniających kryteria wyszukiwania.</td></tr>
+                                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: '#A3AED0' }}>Brak transakcji spełniających kryteria.</td></tr>
                             ) : filteredAlerts.map(alert => (
                                 <tr key={alert.id}>
-                                    <td style={{ color: '#4318FF', fontWeight: '600' }}>{alert.id}</td>
-                                    <td>{alert.date}</td>
-                                    <td>{alert.type}</td>
-                                    <td><span className={`score-badge ${parseFloat(alert.score) >= 0.90 ? 'score-red' : 'score-orange'}`}>{alert.score}</span></td>
+                                    <td style={{ color: '#4318FF', fontWeight: '600' }}>#{alert.id}</td>
+                                    <td>{alert.data}</td>
+                                    <td>#{alert.nadawca} <i className="fa-solid fa-arrow-right" style={{ color: "#A3AED0", margin: '0 5px' }}></i> #{alert.odbiorca}</td>
+                                    <td style={{ fontWeight: '700' }}>{alert.kwota.toFixed(2)} PLN</td>
+
+                                    <td>{alert.status_operacji}</td>
                                     <td>
-                                        <select className="status-select" value={alert.status} onChange={(e) => handleStatusChange(alert.id, e.target.value)}>
-                                            <option value="New">Nowy</option>
-                                            <option value="Positive verification">Zablokowane</option>
-                                            <option value="False Positive">Fałszywy alarm</option>
-                                        </select>
+                                        {alert.status_analizy === 'Zablokowana' && <span className="score-badge score-red">Zablokowana</span>}
+                                        {alert.status_analizy === 'Czysty' && <span className="score-badge" style={{ background: '#DCFCE7', color: '#16A34A' }}>Czysty</span>}
+                                        {alert.status_analizy === 'Zatwierdzona_Recznie' && <span className="score-badge" style={{ background: '#F3E8FF', color: '#6B21A8' }}>Odblokowany</span>}
+                                        {alert.status_analizy === 'Oczekujaca' && <span className="score-badge score-orange">Oczekuje</span>}
                                     </td>
                                     <td>
                                         <button className="btn-outline" onClick={() => setSelectedAlert(alert)}>Szczegóły</button>
+
+                                        {alert.status_analizy === 'Zablokowana' && (
+                                            <button className="btn-approve" onClick={() => handleManualApprove(alert.id)}>
+                                                <i className="fa-solid fa-check"></i> Odblokuj
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -221,18 +242,17 @@ export default function AmlAlerts() {
                     </table>
                 </div>
             </main>
-
             {selectedAlert && (
                 <div className="modal-overlay" onClick={() => setSelectedAlert(null)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3>Szczegóły Alertu: {selectedAlert.id}</h3>
+                            <h3>Szczegóły Transakcji: #{selectedAlert.id}</h3>
                             <button className="close-btn" onClick={() => setSelectedAlert(null)}><i className="fa-solid fa-xmark"></i></button>
                         </div>
 
                         <div className="detail-row">
                             <div className="detail-label">Czas Transakcji</div>
-                            <div className="detail-value">{selectedAlert.date}</div>
+                            <div className="detail-value">{selectedAlert.data || selectedAlert.date}</div>
                         </div>
                         <div style={{ display: 'flex', gap: '50px' }}>
                             <div className="detail-row">
@@ -249,30 +269,6 @@ export default function AmlAlerts() {
                             <div className="detail-value" style={{ fontSize: '20px', fontWeight: '700' }}>{selectedAlert.kwota} PLN</div>
                         </div>
 
-                        <div className="reason-box">
-                            <strong><i className="fa-solid fa-robot"></i> Diagnoza Sztucznej Inteligencji:</strong><br />
-                            {selectedAlert.reason}
-                        </div>
-                        {selectedAlert.xai && selectedAlert.xai.length > 0 && (
-                            <div style={{ marginTop: '20px', padding: '15px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                                <strong style={{ color: '#1E3A8A', fontSize: '13px', textTransform: 'uppercase' }}>
-                                    <i className="fa-solid fa-microchip"></i> XAI: Wpływ cech na decyzję modelu
-                                </strong>
-                                <div style={{ marginTop: '15px' }}>
-                                    {selectedAlert.xai.map((item, idx) => (
-                                        <div key={idx} style={{ marginBottom: '12px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#475569', marginBottom: '5px', fontWeight: '500' }}>
-                                                <span>{item.cecha}</span>
-                                                <span style={{ color: item.kolor, fontWeight: '700' }}>+{item.wplyw}%</span>
-                                            </div>
-                                            <div style={{ width: '100%', height: '8px', background: '#E2E8F0', borderRadius: '4px', overflow: 'hidden' }}>
-                                                <div style={{ width: `${item.wplyw}%`, height: '100%', background: item.kolor, borderRadius: '4px' }}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                         <button
                             className="btn-export"
                             style={{ marginTop: '20px', width: '100%', justifyContent: 'center', background: '#2B3674' }}
