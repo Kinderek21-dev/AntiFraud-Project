@@ -63,6 +63,9 @@ class TransferData(BaseModel):
 class AdminApproveData(BaseModel):
     admin_id: int
 
+class ToggleBlockData(BaseModel):
+    admin_id: int
+
 
 async def worker_przelewow_oczekujacych():
     while True:
@@ -116,11 +119,12 @@ async def uruchom_workera():
     asyncio.create_task(worker_przelewow_oczekujacych())
 
 
+
 @app.post("/api/user/login")
 def login_user_portal(data: LoginData):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT uniqueid, haslo_hash, nazwa_wlasciciela FROM Konta WHERE login = %s;", (data.login,))
+    cur.execute("SELECT uniqueid, haslo_hash, nazwa_wlasciciela, status FROM Konta WHERE login = %s;", (data.login,))
     result = cur.fetchone()
     cur.close()
     conn.close()
@@ -128,7 +132,13 @@ def login_user_portal(data: LoginData):
     if not result:
         raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło")
 
-    user_id, db_hash, user_name = result
+    user_id, db_hash, user_name, status = result 
+    
+    if status == 'Zablokowane':
+        raise HTTPException(
+            status_code=403, 
+            detail="Dostęp zabroniony. Twoje konto zostało zablokowane przez departament bezpieczeństwa AML."
+        )
     
     if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
         expiration = datetime.utcnow() + timedelta(hours=1)
@@ -210,6 +220,14 @@ def make_transfer(data: TransferData):
         conn = get_db_connection()
         cur = conn.cursor()
         
+        cur.execute("SELECT status FROM Konta WHERE uniqueid = %s;", (data.sender_id,))
+        sender_status = cur.fetchone()
+        if sender_status and sender_status[0] == 'Zablokowane':
+            raise HTTPException(
+                status_code=403, 
+                detail="Operacja odrzucona. Konto nadawcy posiada status: Zablokowane."
+            )
+            
         if data.amount <= 0:
             raise HTTPException(status_code=400, detail="Błąd: Kwota przelewu musi być większa niż 0.00 PLN.")
 
@@ -295,6 +313,7 @@ def unblock_transaction(data: UnblockData):
         return {"status": "success", "message": "Odblokowano i dodano do zaufanych"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/api/login")
@@ -553,6 +572,7 @@ def get_graph_data():
         return {"nodes": graph_nodes, "links": links}
     except Exception as e:
         return {"error": str(e)}
+
 @app.get("/api/admin/transakcje/wszystkie")
 def get_global_ledger():
     try:
@@ -617,6 +637,41 @@ def admin_approve_transaction(tx_id: int, data: AdminApproveData):
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Błąd transakcji SQL (Rollback): {str(e)}")
+    finally:
+        cur.close()
+        conn.close()
+
+@app.post("/api/admin/users/{user_id}/toggle-block")
+def toggle_user_block(user_id: int, data: ToggleBlockData):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN;")
+        
+        cur.execute("SELECT status FROM Konta WHERE uniqueid = %s;", (user_id,))
+        result = cur.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="Użytkownik o podanym ID nie istnieje.")
+        
+        obecny_status = result[0]
+        nowy_status = 'Zablokowane' if obecny_status == 'Aktywne' else 'Aktywne'
+        
+        cur.execute("UPDATE Konta SET status = %s WHERE uniqueid = %s;", (nowy_status, user_id))
+        
+        akcja_log = f"USER_BLOCK_{user_id}" if nowy_status == 'Zablokowane' else f"USER_UNBLOCK_{user_id}"
+        cur.execute("""
+            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja)
+            VALUES (%s, NULL, %s); 
+        """, (data.admin_id, akcja_log))
+        
+        conn.commit()
+        return {"status": "success", "message": f"Zmieniono status użytkownika #{user_id} na: {nowy_status}"}
+    except HTTPException as he:
+        conn.rollback()
+        raise he
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd krytyczny: {str(e)}")
     finally:
         cur.close()
         conn.close()
