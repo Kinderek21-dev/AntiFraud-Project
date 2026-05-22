@@ -72,6 +72,9 @@
     <None Include="frontend-react\src\ClientPortal.jsx">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="frontend-react\src\AccountFreezing.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
     <None Include="frontend-react\src\AllTransactions.jsx">
       <Filter>Pliki zasobów</Filter>
     </None>

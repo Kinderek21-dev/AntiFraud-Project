@@ -675,3 +675,71 @@ def toggle_user_block(user_id: int, data: ToggleBlockData):
     finally:
         cur.close()
         conn.close()
+
+
+@app.get("/api/admin/users")
+def get_all_users_for_admin():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT k.uniqueid, k.nazwa_wlasciciela, k.status,
+                   COALESCE(COUNT(t.uniqueid), 0) as blocked_count
+            FROM Konta k
+            LEFT JOIN Transakcje t ON k.uniqueid = t.id_konta_nadawcy AND t.status_analizy = 'Zablokowana'
+            WHERE k.login != 'admin'
+            GROUP BY k.uniqueid, k.nazwa_wlasciciela, k.status
+            ORDER BY blocked_count DESC;
+        """)
+        
+        users = []
+        for row in cur.fetchall():
+            user_id = row[0]
+            blocked_count = int(row[3])
+            
+            risk_level = "Low"
+            if blocked_count >= 15: risk_level = "Critical"
+            elif blocked_count >= 5: risk_level = "High"
+            elif blocked_count >= 1: risk_level = "Medium"
+            
+            users.append({
+                "id": user_id,
+                "accId": f"ACC-{str(user_id).zfill(4)}-{str(user_id*3).zfill(4)}", 
+                "name": row[1],
+                "status": row[2],
+                "blockedCount": blocked_count,
+                "risk": risk_level
+            })
+            
+        cur.close()
+        conn.close()
+        return users
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/transactions/{tx_id}/request-review")
+def request_manual_review(tx_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            UPDATE Transakcje 
+            SET status_analizy = 'Do_Weryfikacji' 
+            WHERE uniqueid = %s AND status_analizy = 'Zablokowana';
+        """, (tx_id,))
+        
+        cur.execute("""
+            UPDATE Wyniki_ML 
+            SET status = 'Do_Weryfikacji' 
+            WHERE id_transkacji = %s;
+        """, (tx_id,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success", "message": "Zgłoszono do weryfikacji"}
+    except Exception as e:
+        if 'conn' in locals(): conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

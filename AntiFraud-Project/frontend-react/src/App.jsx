@@ -6,6 +6,7 @@ import Settings from './Settings';
 import TransactionStatistics from './TransactionStatistics'; 
 import ClientPortal from './ClientPortal';
 import AllTransactions from './AllTransactions';
+import AccountFreezing from './AccountFreezing';
 function App() {
   return (
     <BrowserRouter>
@@ -17,7 +18,8 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="" element={<Navigate to="/" />} />
         <Route path="/klient" element={<ClientPortal />} />
-        <Route path="/transactions" element={<AllTransactions />} />
+              <Route path="/transactions" element={<AllTransactions />} />
+              <Route path="/blacklist" element={<AccountFreezing />} />
       </Routes>
     </BrowserRouter>
   );

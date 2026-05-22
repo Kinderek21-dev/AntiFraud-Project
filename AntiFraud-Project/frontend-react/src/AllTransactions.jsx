@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import ForceGraph2D from 'react-force-graph-2d';
 
 export default function AllTransactions() {
-
     const navigate = useNavigate();
     const [alerts, setAlerts] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -43,18 +42,36 @@ export default function AllTransactions() {
     const handleManualApprove = async (txId) => {
         if (!window.confirm(`Czy na pewno chcesz ręcznie zatwierdzić i odblokować przelew #${txId}?`)) return;
         try {
-            const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, {
+            const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ admin_id: 1 })
+            });
+            if (res.ok) {
+                alert("Przelew został odblokowany! Ślad w audycie zapisany.");
+                fetchHistory(); 
+            } else {
+                alert("Błąd podczas zatwierdzania.");
+            }
+        } catch (error) { console.error("Błąd:", error); }
+    };
+
+    const handleFreezeUser = async (userId) => {
+        if (!window.confirm(`UWAGA: Czy na pewno chcesz natychmiastowo zamrozić konto #${userId}?`)) return;
+        try {
+            const res = await fetch(`http://localhost:8000/api/admin/users/${userId}/toggle-block`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ admin_id: 1 }) 
             });
             if (res.ok) {
-                alert("Przelew został odblokowany! Ślad w audycie zapisany.");
-                fetchHistory();
+                alert(`Sukces! Konto nadawcy #${userId} zostało całkowicie zamrożone.`);
             } else {
-                alert("Błąd podczas zatwierdzania.");
+                alert("Błąd. Konto może być już zamrożone lub nie istnieje.");
             }
-        } catch (error) { console.error("Błąd:", error); }
+        } catch (error) {
+            console.error("Błąd blokowania konta:", error);
+        }
     };
 
     const filteredAlerts = alerts.filter(a => {
@@ -83,7 +100,7 @@ export default function AllTransactions() {
         filteredAlerts.forEach(a => {
             csvRows.push(`${a.id},${a.data},${a.nadawca},${a.odbiorca},${a.kwota},${a.status_operacji},${a.status_analizy}`);
         });
-        const blob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([csvRows.join(" ")], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -92,7 +109,6 @@ export default function AllTransactions() {
     };
 
     const styles = `
-        /* (Style zostają w 100% bez zmian!) */
         .dashboard-body { display: flex; height: 100vh; background-color: #F4F7FE; color: #2B3674; width: 100vw; overflow: hidden; }
         .sidebar { width: 260px; background-color: #1E3A8A; color: white; display: flex; flex-direction: column; padding: 30px 20px; flex-shrink: 0; }
         .logo { font-size: 24px; font-weight: bold; margin-bottom: 40px; display: flex; align-items: center; gap: 10px; }
@@ -121,7 +137,6 @@ export default function AllTransactions() {
         .score-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 13px; }
         .score-red { background-color: #FEE2E2; color: #EF4444; }
         .score-orange { background-color: #FEF3C7; color: #F59E0B; }
-        .status-select { padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; border: 1px solid #E2E8F0; outline: none; cursor: pointer; }
         .btn-outline { padding: 8px 16px; border-radius: 8px; border: 1px solid #1E3A8A; color: #1E3A8A; background: transparent; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; }
         .btn-outline:hover { background: #1E3A8A; color: white; }
         
@@ -133,8 +148,6 @@ export default function AllTransactions() {
         .detail-row { margin-bottom: 15px; }
         .detail-label { font-size: 12px; color: #A3AED0; text-transform: uppercase; font-weight: 600; margin-bottom: 5px; }
         .detail-value { font-size: 15px; color: #2B3674; font-weight: 500; }
-        .reason-box { background: #FEF2F2; border-left: 4px solid #EF4444; padding: 15px; border-radius: 4px; margin-top: 20px; color: #991B1B; font-size: 14px; font-weight: 500;}
-        /* 🟢 ZMIANA: Dodany jeden styl guzika zatwierdzania pod guzikiem "Szczegóły" */
         .btn-approve { padding: 8px 16px; border-radius: 8px; border: none; color: white; background: #10B981; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; margin-left: 10px; }
         .btn-approve:hover { background: #059669; }
     `;
@@ -147,9 +160,8 @@ export default function AllTransactions() {
                 <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
                 <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
                 <div className="nav-item" onClick={() => navigate('/alerts')}><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-
                 <div className="nav-item active"><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
-
+                <div className="nav-item" onClick={() => navigate('/blacklist')}><i className="fa-solid fa-user-lock"></i> Zablokowani</div>
                 <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
                 <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
                 <div className="sidebar-bottom">
@@ -182,6 +194,7 @@ export default function AllTransactions() {
                             <option value="Zrealizowana">Zrealizowane</option>
                             <option value="Zaplanowana">Zaplanowane</option>
                             <option value="Zablokowana">Zablokowane AML</option>
+                            <option value="Do_Weryfikacji">Do Weryfikacji (Zgłoszenia)</option>
                             <option value="Zatwierdzona_Recznie">Odblokowane Ręcznie</option>
                         </select>
                     </div>
@@ -223,6 +236,7 @@ export default function AllTransactions() {
                                     <td>{alert.status_operacji}</td>
                                     <td>
                                         {alert.status_analizy === 'Zablokowana' && <span className="score-badge score-red">Zablokowana</span>}
+                                        {alert.status_analizy === 'Do_Weryfikacji' && <span className="score-badge" style={{ background: '#E0E7FF', color: '#4338CA' }}>Do Weryfikacji</span>}
                                         {alert.status_analizy === 'Czysty' && <span className="score-badge" style={{ background: '#DCFCE7', color: '#16A34A' }}>Czysty</span>}
                                         {alert.status_analizy === 'Zatwierdzona_Recznie' && <span className="score-badge" style={{ background: '#F3E8FF', color: '#6B21A8' }}>Odblokowany</span>}
                                         {alert.status_analizy === 'Oczekujaca' && <span className="score-badge score-orange">Oczekuje</span>}
@@ -230,7 +244,7 @@ export default function AllTransactions() {
                                     <td>
                                         <button className="btn-outline" onClick={() => setSelectedAlert(alert)}>Szczegóły</button>
 
-                                        {alert.status_analizy === 'Zablokowana' && (
+                                        {(alert.status_analizy === 'Zablokowana' || alert.status_analizy === 'Do_Weryfikacji') && (
                                             <button className="btn-approve" onClick={() => handleManualApprove(alert.id)}>
                                                 <i className="fa-solid fa-check"></i> Odblokuj
                                             </button>
@@ -242,6 +256,7 @@ export default function AllTransactions() {
                     </table>
                 </div>
             </main>
+
             {selectedAlert && (
                 <div className="modal-overlay" onClick={() => setSelectedAlert(null)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -276,6 +291,14 @@ export default function AllTransactions() {
                         >
                             <i className="fa-solid fa-network-wired"></i> Pokaż graf powiązań
                         </button>
+
+                        <button
+                            className="btn-export"
+                            style={{ marginTop: '10px', width: '100%', justifyContent: 'center', background: '#EF4444' }}
+                            onClick={() => handleFreezeUser(selectedAlert.nadawca)}
+                        >
+                            <i className="fa-solid fa-user-lock"></i> Natychmiast zamroź konto nadawcy
+                        </button>
                     </div>
                 </div>
             )}
@@ -306,7 +329,8 @@ export default function AllTransactions() {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+        };
         </div>
     );
 }

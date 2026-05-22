@@ -50,6 +50,12 @@ export default function ClientPortal() {
 
     const handleTransfer = async (e) => {
         e.preventDefault();
+
+        if (transferData.receiver_id && parseInt(transferData.receiver_id) === parseInt(user.id)) {
+            setStatusMessage({ text: 'Błąd: Nie możesz wysłać przelewu na własne konto.', type: 'error' });
+            return;
+        }
+
         setStatusMessage({ text: 'Przetwarzanie zlecenia...', type: 'info' });
 
         try {
@@ -91,29 +97,22 @@ export default function ClientPortal() {
     };
 
     const handleUnblock = async (txId, receiverId) => {
-        const smsCode = window.prompt("Wpisz kod:");
+        if (!window.confirm("Zgłosić ten przelew do ręcznej weryfikacji przez analityka banku?")) return;
 
-        if (smsCode !== "1234") {
-            setStatusMessage({ text: 'Błędny kod Przelew pozostaje wstrzymany.', type: 'error' });
-            return;
-        }
         try {
-            const res = await fetch('http://localhost:8000/api/user/unblock', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    transaction_id: txId,
-                    receiver_id: receiverId,
-                    sender_id: parseInt(user.id)
-                })
+            const res = await fetch(`http://localhost:8000/api/user/transactions/${txId}/request-review`, {
+                method: 'POST'
             });
+
             if (res.ok) {
-                setStatusMessage({ text: 'Potwierdzono tożsamość. Przelew odblokowany i dodany do Zaufanych!', type: 'success' });
+                setStatusMessage({ text: 'Wysłano zgłoszenie. Przelew oczekuje na decyzję analityka AML.', type: 'info' });
                 fetchDashboard(user.id);
-                setTimeout(() => setStatusMessage({ text: '', type: '' }), 4000);
+                setTimeout(() => setStatusMessage({ text: '', type: '' }), 5000);
+            } else {
+                setStatusMessage({ text: 'Wystąpił błąd podczas zgłaszania.', type: 'error' });
             }
         } catch (error) {
-            console.error("Błąd odblokowania", error);
+            console.error("Błąd zgłoszenia", error);
         }
     };
 
@@ -201,11 +200,12 @@ export default function ClientPortal() {
                                 <hr style={{ border: 'none', height: '1px', background: '#E0E5F2', margin: '5px 0' }} />
 
                                 <div>
-                                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#2B3674', marginBottom: '6px', display: 'block' }}>Kwotas</label>
+                                    <label style={{ fontSize: '13px', fontWeight: '600', color: '#2B3674', marginBottom: '6px', display: 'block' }}>Kwota</label>
                                     <input
                                         name="amount"
                                         type="number"
                                         step="0.01"
+                                        min="0.01"
                                         required
                                         value={transferData.amount}
                                         onChange={handleTransferChange}
@@ -292,10 +292,11 @@ export default function ClientPortal() {
                                                             {tx.status_analizy === 'Zablokowana' && (
                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                                                     <span style={{ padding: '4px 8px', borderRadius: '4px', background: '#FEE2E2', color: '#EF4444', fontSize: '12px', fontWeight: '600', textAlign: 'center' }}>Wstrzymano</span>
-                                                                    <button onClick={() => handleUnblock(tx.id, tx.kontrahent)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#10B981', color: 'white', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>To ja, odblokuj</button>
+                                                                    <button onClick={() => handleUnblock(tx.id, tx.kontrahent)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#10B981', color: 'white', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>Zgłoś do weryfikacji</button>
                                                                 </div>
                                                             )}
-                                                            {(tx.status_analizy !== 'Oczekujaca' && tx.status_analizy !== 'Zablokowana') && <span style={{ padding: '4px 8px', borderRadius: '4px', background: '#DCFCE7', color: '#16A34A', fontSize: '12px', fontWeight: '600' }}>Czysty</span>}
+                                                            {tx.status_analizy === 'Do_Weryfikacji' && <span style={{ padding: '4px 8px', borderRadius: '4px', background: '#E0E7FF', color: '#4338CA', fontSize: '12px', fontWeight: '600' }}>Weryfikacja przez pracownika</span>}
+                                                            {(tx.status_analizy !== 'Oczekujaca' && tx.status_analizy !== 'Zablokowana' && tx.status_analizy !== 'Do_Weryfikacji') && <span style={{ padding: '4px 8px', borderRadius: '4px', background: '#DCFCE7', color: '#16A34A', fontSize: '12px', fontWeight: '600' }}>Czysty</span>}
                                                         </>
                                                     )}
                                                 </td>

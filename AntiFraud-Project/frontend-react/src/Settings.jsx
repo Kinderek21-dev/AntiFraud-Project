@@ -71,6 +71,7 @@ export default function Settings() {
                 <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
                 <div className="nav-item" onClick={() => navigate('/transactions')}><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
                 <div className="nav-item active"><i className="fa-solid fa-gear"></i> Ustawienia</div>
+                <div className="nav-item" onClick={() => navigate('/blacklist')}><i className="fa-solid fa-ban"></i> Zablokowani</div>
                 <div className="sidebar-bottom">
                     <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
                     <div className="nav-item" onClick={() => navigate('/')}><i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj</div>
