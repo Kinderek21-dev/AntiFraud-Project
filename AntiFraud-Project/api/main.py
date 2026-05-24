@@ -115,9 +115,8 @@ async def worker_przelewow_oczekujacych():
         await asyncio.sleep(10)
 
 @app.on_event("startup")
-async def uruchom_workera():
+async def startup_event():
     asyncio.create_task(worker_przelewow_oczekujacych())
-
 
 
 @app.post("/api/user/login")
@@ -315,7 +314,6 @@ def unblock_transaction(data: UnblockData):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 @app.post("/api/login")
 def login_user(data: LoginData):
     conn = get_db_connection()
@@ -326,8 +324,12 @@ def login_user(data: LoginData):
     conn.close()
     if not result: raise HTTPException(status_code=401)
     db_hash = result[0]
-    if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
-        return {"status": "success"}
+    
+    try:
+        if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
+            return {"status": "success"}
+    except:
+        pass
     raise HTTPException(status_code=401)
 
 @app.get("/api/settings")
@@ -605,7 +607,6 @@ def get_global_ledger():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd odczytu bazy: {str(e)}")
 
-
 @app.post("/api/admin/alerts/{tx_id}/approve")
 def admin_approve_transaction(tx_id: int, data: AdminApproveData):
     conn = get_db_connection()
@@ -676,7 +677,6 @@ def toggle_user_block(user_id: int, data: ToggleBlockData):
         cur.close()
         conn.close()
 
-
 @app.get("/api/admin/users")
 def get_all_users_for_admin():
     try:
@@ -742,4 +742,37 @@ def request_manual_review(tx_id: int):
         return {"status": "success", "message": "Zgłoszono do weryfikacji"}
     except Exception as e:
         if 'conn' in locals(): conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/list")
+def get_all_admins():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, COUNT(l.id) as resolved_cases
+            FROM Administratorzy a
+            LEFT JOIN admin_audit_log l ON a.uniqueid = l.admin_id AND l.akcja = 'MANUAL_APPROVE'
+            GROUP BY a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email
+            ORDER BY resolved_cases DESC, a.uniqueid ASC;
+        """)
+        
+        admin_list = []
+        for row in cur.fetchall():
+            admin_list.append({
+                "id": row[0],
+                "login": row[1],
+                "role": row[2],
+                "name": row[3],
+                "email": row[4],
+                "resolvedCases": row[5],
+                "status": "Active" 
+            })
+            
+        cur.close()
+        conn.close()
+        return admin_list
+    except Exception as e:
+        print(f"BŁĄD SQL W ADMIN LIST: {e}") 
         raise HTTPException(status_code=500, detail=str(e))

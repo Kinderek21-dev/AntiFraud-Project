@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: 12345
       POSTGRES_DB: antifraud
     ports:
-      - "5433:5432" 
+      - "5433:5432"
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       
@@ -22,11 +22,23 @@ services:
     build: ./api
     ports:
       - "8000:8000"
-    depends_on:
-      - db
     volumes:
       - ./api:/app
       - C:/AI:/app/models
+    environment:
+      - DB_HOST=db
+    depends_on:
+      - db
+
+  ml_worker:
+    build: ./api
+    volumes:
+      - ./api:/app
+    environment:
+      - DB_HOST=db
+    command: ["python", "ml_worker.py"]
+    depends_on:
+      - db
 
   frontend:
     build: ./frontend-react

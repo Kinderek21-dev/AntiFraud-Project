@@ -7,6 +7,7 @@ import TransactionStatistics from './TransactionStatistics';
 import ClientPortal from './ClientPortal';
 import AllTransactions from './AllTransactions';
 import AccountFreezing from './AccountFreezing';
+import InsiderThreat from './InsiderThreat';
 function App() {
   return (
     <BrowserRouter>
@@ -20,6 +21,7 @@ function App() {
         <Route path="/klient" element={<ClientPortal />} />
               <Route path="/transactions" element={<AllTransactions />} />
               <Route path="/blacklist" element={<AccountFreezing />} />
+	<Route path="/insider-threat" element={<InsiderThreat />} />
       </Routes>
     </BrowserRouter>
   );
