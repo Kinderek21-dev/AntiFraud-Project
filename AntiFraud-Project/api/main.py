@@ -62,6 +62,7 @@ class TransferData(BaseModel):
 
 class AdminApproveData(BaseModel):
     admin_id: int
+    reason: str 
 
 class ToggleBlockData(BaseModel):
     admin_id: int
@@ -157,6 +158,8 @@ def login_user_portal(data: LoginData):
 
 @app.post("/api/user/register")
 def register_user(data: RegisterData):
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="Hasło musi składać się z minimum 6 znaków.")
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -318,19 +321,23 @@ def unblock_transaction(data: UnblockData):
 def login_user(data: LoginData):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT haslo_hash FROM Administratorzy WHERE login = %s;", (data.login,))
+    cur.execute("SELECT uniqueid, haslo_hash, rola, imie_nazwisko FROM Administratorzy WHERE login = %s;", (data.login,))
     result = cur.fetchone()
     cur.close()
     conn.close()
     if not result: raise HTTPException(status_code=401)
-    db_hash = result[0]
-    
+    admin_id, db_hash, rola, imie = result
     try:
         if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
-            return {"status": "success"}
+            return {
+                "status": "success", 
+                "admin_id": admin_id, 
+                "role": rola,
+                "name": imie
+            }
     except:
         pass
-    raise HTTPException(status_code=401)
+    raise HTTPException(status_code=401, detail="Błędne hasło admina")
 
 @app.get("/api/settings")
 def get_settings():

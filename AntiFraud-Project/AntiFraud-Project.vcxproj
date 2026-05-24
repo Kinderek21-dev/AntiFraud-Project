@@ -141,6 +141,7 @@
     <None Include="frontend-react\src\App.jsx" />
     <None Include="frontend-react\src\ClientPortal.jsx" />
     <None Include="frontend-react\src\Dashboard.jsx" />
+    <None Include="frontend-react\src\InsiderThreat.jsx" />
     <None Include="frontend-react\src\Login.jsx" />
     <None Include="frontend-react\src\main.jsx" />
     <None Include="frontend-react\src\Settings.jsx" />
@@ -149,6 +150,7 @@
     <None Include="frontend\index.html" />
     <None Include="frontend\script.js" />
     <None Include="frontend\style.css" />
+    <None Include="init.sql" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

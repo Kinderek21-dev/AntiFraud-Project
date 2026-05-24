@@ -11,7 +11,6 @@ export default function Login() {
     const handleLogin = async (e) => {
         e.preventDefault();
         try {
- 
             const adminRes = await fetch('http://localhost:8000/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -19,10 +18,15 @@ export default function Login() {
             });
 
             if (adminRes.ok) {
+                const adminData = await adminRes.json();
+
+                localStorage.setItem('adminId', adminData.admin_id);
+                localStorage.setItem('adminRole', adminData.role);
+                localStorage.setItem('adminName', adminData.name);
+
                 navigate('/dashboard');
                 return;
             }
-
 
             const userRes = await fetch('http://localhost:8000/api/user/login', {
                 method: 'POST',
@@ -30,18 +34,22 @@ export default function Login() {
                 body: JSON.stringify({ login: loginValue, password: passwordValue })
             });
 
-            if (userRes.ok) {
-                const data = await userRes.json();
+            const userData = await userRes.json();
 
-                localStorage.setItem('userToken', data.token);
-                localStorage.setItem('userId', data.user_id);
-                localStorage.setItem('userName', data.user_name);
-                navigate('/klient'); 
+            if (userRes.ok) {
+                localStorage.setItem('userToken', userData.token);
+                localStorage.setItem('userId', userData.user_id);
+                localStorage.setItem('userName', userData.user_name);
+                navigate('/klient');
+                return;
+            } else {
+                if (userRes.status === 403) {
+                    alert(`KONTO ZAMROŻONE: ${userData.detail}`);
+                } else {
+                    alert("Błędny login lub hasło!");
+                }
                 return;
             }
-
-
-            alert("Błędny login lub hasło!");
 
         } catch (error) {
             console.error("Błąd połączenia z API:", error);
@@ -51,20 +59,29 @@ export default function Login() {
 
     const handleRegister = async (e) => {
         e.preventDefault();
+
+        if (passwordValue.length < 6) {
+            alert("Hasło musi składać się z minimum 6 znaków.");
+            return; 
+        }
+
         try {
             const res = await fetch('http://localhost:8000/api/user/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ login: loginValue, password: passwordValue, name: nameValue })
             });
+
+            const data = await res.json();
+
             if (res.ok) {
-                alert('Konto utworzone! Możesz się teraz zalogować.');
-                setView('login');
+                alert("Rejestracja udana! Możesz się teraz zalogować.");
             } else {
-                alert('Błąd: Login może być już zajęty.');
+                alert(`Błąd rejestracji: ${data.detail || "Nie udało się założyć konta."}`);
             }
         } catch (error) {
-            alert("Błąd połączenia z API.");
+            console.error("Błąd połączenia:", error);
+            alert("Błąd połączenia z serwerem.");
         }
     };
 

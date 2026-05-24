@@ -78,5 +78,11 @@
     <None Include="frontend-react\src\AllTransactions.jsx">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="init.sql">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="frontend-react\src\InsiderThreat.jsx">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

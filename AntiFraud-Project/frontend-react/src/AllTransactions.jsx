@@ -40,16 +40,24 @@ export default function AllTransactions() {
     }, []);
 
     const handleManualApprove = async (txId) => {
-        if (!window.confirm(`Czy na pewno chcesz ręcznie zatwierdzić i odblokować przelew #${txId}?`)) return;
+        const reason = window.prompt(`powód odblokowania przelewu #${txId}:`);
+
+        if (!reason || reason.trim() === "") {
+            alert("Operacja anulowana.");
+            return;
+        }
+        if (!window.confirm(`Czy na pewno chcesz odblokować przelew #${txId}?`)) return;
+
         try {
-            const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, { 
+            const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ admin_id: 1 })
+                body: JSON.stringify({ admin_id: localStorage.getItem('adminId') || 1, reason: reason })
             });
+
             if (res.ok) {
-                alert("Przelew został odblokowany! Ślad w audycie zapisany.");
-                fetchHistory(); 
+                alert("Przelew został odblokowany!.");
+                fetchHistory();
             } else {
                 alert("Błąd podczas zatwierdzania.");
             }
