@@ -9,6 +9,7 @@ export default function InsiderThreat() {
     const [showAdminModal, setShowAdminModal] = useState(false);
     const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
     const [auditLogData, setAuditLogData] = useState(null);
+    const [suspendedAdminIds, setSuspendedAdminIds] = useState([]);
 
     const fetchAdmins = () => {
         fetch('http://localhost:8000/api/admin/list')
@@ -33,9 +34,22 @@ export default function InsiderThreat() {
     const totalOverrides = admins.reduce((sum, admin) => sum + admin.resolvedCases, 0);
     const suspiciousPatternsCount = (suspiciousAdmin && suspiciousAdmin.resolvedCases > 0) ? 1 : 0;
 
-    const handleSuspend = (id, name) => {
-        if(window.confirm(` UWAGA KRYTYCZNA:\nCzy na pewno chcesz natychmiastowo zablokować dostęp do systemu dla analityka: ${name} (ID: ${id})?\n\nObecna sesja użytkownika zostanie wygaszona.`)) {
-            alert(` SUKCES: Zabezpieczono system. Konto administratora ${name} zostało permanentnie zawieszone do czasu wyjaśnienia incydentu przez audytorów.`);
+    const handleSuspend = async (id, name) => {
+        if(window.confirm(`⚠ UWAGA KRYTYCZNA:\nCzy na pewno chcesz natychmiastowo zablokować dostęp do systemu dla analityka: ${name} (ID: ${id})?\n\nObecna sesja użytkownika zostanie wygaszona.`)) {
+            try {
+                const res = await fetch(`http://localhost:8000/api/admin/${id}/suspend`, {
+                    method: 'POST'
+                });
+                
+                if (res.ok) {
+                    setSuspendedAdminIds(prevIds => [...prevIds, id]);
+                    alert(` SUKCES: Zabezpieczono system. Konto administratora ${name} zostało permanentnie zawieszone do czasu wyjaśnienia incydentu przez audytorów.`);
+                } else {
+                    alert("Wystąpił błąd po stronie serwera podczas zawieszania.");
+                }
+            } catch (error) {
+                console.error("Błąd API:", error);
+            }
         }
     };
 
@@ -127,18 +141,36 @@ export default function InsiderThreat() {
             <style>{styles}</style>
 
             <aside className="sidebar">
-                <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
-                <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
-                <div className="nav-item" onClick={() => navigate('/alerts')}><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-                <div className="nav-item" onClick={() => navigate('/transactions')}><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
-                <div className="nav-item active"><i className="fa-solid fa-user-secret"></i> Zagrożenia Wewnętrzne</div>
-                <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
-                <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
-                <div className="sidebar-bottom">
-                    <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
-                    <div className="nav-item" onClick={() => navigate('/')}><i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj</div>
-                </div>
-            </aside>
+    <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
+    
+    <div className={`nav-item ${window.location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => navigate('/dashboard')}>
+        <i className="fa-solid fa-border-all"></i> Dashboard
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/alerts' ? 'active' : ''}`} onClick={() => navigate('/alerts')}>
+        <i className="fa-solid fa-triangle-exclamation"></i> Alerty AML
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/transactions' ? 'active' : ''}`} onClick={() => navigate('/transactions')}>
+        <i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/blacklist' ? 'active' : ''}`} onClick={() => navigate('/blacklist')}>
+        <i className="fa-solid fa-user-lock"></i> Zablokowani
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/insider-threat' ? 'active' : ''}`} onClick={() => navigate('/insider-threat')}>
+        <i className="fa-solid fa-user-secret"></i> Zagrożenia Wewnętrzne
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/statistics' ? 'active' : ''}`} onClick={() => navigate('/statistics')}>
+        <i className="fa-solid fa-chart-simple"></i> Statystyki
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>
+        <i className="fa-solid fa-gear"></i> Ustawienia
+    </div>
+    
+    <div className="sidebar-bottom">
+        <div className="nav-item" onClick={() => navigate('/')}>
+            <i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj
+        </div>
+    </div>
+</aside>
 
             <main className="main-content">
                 <div className="page-header">
@@ -146,7 +178,6 @@ export default function InsiderThreat() {
                     <div className="page-subtitle">Panel antykorupcyjny do monitorowania pracowników banku i działań administracyjnych</div>
                 </div>
 
-                {/* KARTA GŁÓWNA - PODEJRZANY ADMIN */}
                 {suspiciousPatternsCount > 0 && suspiciousAdmin && (
                     <div className="threat-alert-box">
                         <div className="threat-header">
@@ -166,7 +197,6 @@ export default function InsiderThreat() {
                             
                             <div className="warning-text">
                                 <i className="fa-solid fa-triangle-exclamation"></i> 
-                                {/* UWAGA: Naprawiony tag &gt; !!! */}
                                 Ręcznie odblokowano {suspiciousAdmin.resolvedCases} przelewów wysokiego ryzyka (Wynik &gt; 0.95).
                             </div>
 
@@ -186,7 +216,6 @@ export default function InsiderThreat() {
                             </div>
 
                             <div className="threat-actions">
-                                {/* PODPIĘTE PRZYCISKI Z GŁÓWNEJ KARTY */}
                                 <button className="btn-suspend" onClick={() => handleSuspend(suspiciousAdmin.id, suspiciousAdmin.name)}>Zawieś Dostęp Administratora</button>
                                 <button className="btn-audit" onClick={() => handleViewLog(suspiciousAdmin.id)}>Zobacz Pełny Log Audytowy</button>
                             </div>
@@ -194,7 +223,6 @@ export default function InsiderThreat() {
                     </div>
                 )}
 
-                {/* WYKRES */}
                 <div className="stats-container">
                     <div className="stats-header">Ręczne zatwierdzenia (Overrides) przez Administratora</div>
                     <div className="stats-sub">Liczba zablokowanych przelewów ręcznie zwolnionych przez każdego analityka (Ostatnie 30 Dni)</div>
@@ -219,7 +247,6 @@ export default function InsiderThreat() {
                     )}
                 </div>
 
-                {/* KPI NA DOLE */}
                 <div className="kpi-row">
                     <div className="kpi-box">
                         <div className="kpi-icon"><i className="fa-solid fa-chart-line"></i></div>
@@ -240,7 +267,6 @@ export default function InsiderThreat() {
                 </div>
             </main>
 
-            {/* MODAL 1: TABELA WSZYSTKICH ADMINÓW */}
             {showAdminModal && (
                 <div className="modal-overlay" onClick={() => setShowAdminModal(false)}>
                     <div className="modal-container" onClick={e => e.stopPropagation()}>
@@ -265,37 +291,44 @@ export default function InsiderThreat() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {admins.map(admin => (
-                                        <tr key={admin.id}>
-                                            <td style={{ fontWeight: '600', color: '#1E3A8A' }}>
-                                                {admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 && <i className="fa-solid fa-circle-exclamation" style={{color: '#DC2626', marginRight: '8px'}}></i>}
-                                                Admin #{String(admin.id).padStart(2, '0')}
-                                            </td>
-                                            <td>
-                                                <div style={{ fontWeight: '600', color: '#1E293B' }}>{admin.name}</div>
-                                                <div style={{ fontSize: '12px', color: '#64748B' }}>{admin.email}</div>
-                                            </td>
-                                            <td>
-                                                <div style={{ fontSize: '13px', color: '#334155', fontWeight: '500' }}>{admin.role}</div>
-                                            </td>
-                                            <td>
-                                                <span style={{ 
-                                                    background: admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 ? '#FEE2E2' : '#F1F5F9', 
-                                                    color: admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 ? '#DC2626' : '#475569', 
-                                                    padding: '4px 8px', borderRadius: '4px', fontWeight: '600'
-                                                }}>
-                                                    {admin.resolvedCases}
-                                                </span>
-                                            </td>
-                                            <td><span className="status-pill">Aktywny</span></td>
-                                            <td>
-                                                {/* PODPIĘTE PRZYCISKI Z TABELI */}
-                                                <button className="action-btn-view" onClick={() => handleViewLog(admin.id)}>Zobacz Log</button>
-                                                <button className="action-btn-suspend" onClick={() => handleSuspend(admin.id, admin.name)}>Zawieś</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
+    {admins.map(admin => {
+        const isSuspended = suspendedAdminIds.includes(admin.id);
+
+        return (
+        <tr key={admin.id} style={{ opacity: isSuspended ? 0.5 : 1 }}>
+            <td style={{ fontWeight: '600', color: '#1E3A8A' }}>
+                {admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 && !isSuspended && <i className="fa-solid fa-circle-exclamation" style={{color: '#DC2626', marginRight: '8px'}}></i>}
+                Admin #{String(admin.id).padStart(2, '0')}
+            </td>
+            <td>
+                <div style={{ fontWeight: '600', color: '#1E293B', textDecoration: isSuspended ? 'line-through' : 'none' }}>{admin.name}</div>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>{admin.email}</div>
+            </td>
+            <td>
+                <div style={{ fontSize: '13px', color: '#334155', fontWeight: '500' }}>{admin.role}</div>
+            </td>
+            <td>
+                <span style={{ 
+                    background: admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 && !isSuspended ? '#FEE2E2' : '#F1F5F9', 
+                    color: admin.id === suspiciousAdmin?.id && suspiciousPatternsCount > 0 && !isSuspended ? '#DC2626' : '#475569', 
+                    padding: '4px 8px', borderRadius: '4px', fontWeight: '600'
+                }}>
+                    {admin.resolvedCases}
+                </span>
+            </td>
+            <td>
+                {isSuspended 
+                    ? <span className="status-pill" style={{background: '#FEE2E2', color: '#DC2626'}}>Zawieszony</span>
+                    : <span className="status-pill">Aktywny</span>
+                }
+            </td>
+            <td>
+                <button className="action-btn-view" onClick={() => handleViewLog(admin.id)}>Zobacz Log</button>
+                {!isSuspended && <button className="action-btn-suspend" onClick={() => handleSuspend(admin.id, admin.name)}>Zawieś</button>}
+            </td>
+        </tr>
+    )})}
+</tbody>
                             </table>
                         </div>
 
@@ -309,7 +342,6 @@ export default function InsiderThreat() {
                 </div>
             )}
 
-            {/* MODAL 2: NOWY - PEŁNY LOG AUDYTOWY KONKRETNEGO ADMINA */}
             {isAuditModalOpen && auditLogData && (
                 <div className="modal-overlay" onClick={() => setIsAuditModalOpen(false)}>
                     <div className="modal-container" onClick={e => e.stopPropagation()}>
@@ -322,7 +354,6 @@ export default function InsiderThreat() {
                         </div>
                         
                         <div className="modal-body">
-                            {/* Statystyki z API od Kolegi */}
                             <div style={{ display: 'flex', gap: '15px', marginBottom: '25px' }}>
                                 <div className="threat-kpi-card" style={{margin: 0}}>
                                     <div className="threat-kpi-label">Wszystkie Akcje</div>
@@ -342,7 +373,6 @@ export default function InsiderThreat() {
                                 </div>
                             </div>
 
-                            {/* Tabela historii akcji */}
                             <table className="admin-table">
                                 <thead>
                                     <tr>

@@ -45,19 +45,37 @@ export default function TransactionStatistics() {
             <style>{styles}</style>
             
            
-            <aside className="sidebar">
-                <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
-                <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
-                <div className="nav-item" onClick={() => navigate('/alerts')}><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-                <div className="nav-item active"><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
-                <div className="nav-item" onClick={() => navigate('/transactions')}><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
-                <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
-                <div className="nav-item" onClick={() => navigate('/blacklist')}><i className="fa-solid fa-ban"></i> Zablokowani</div>
-                <div className="sidebar-bottom">
-                    <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
-                    <div className="nav-item" onClick={() => navigate('/')}><i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj</div>
-                </div>
-            </aside>
+           <aside className="sidebar">
+    <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
+    
+    <div className={`nav-item ${window.location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => navigate('/dashboard')}>
+        <i className="fa-solid fa-border-all"></i> Dashboard
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/alerts' ? 'active' : ''}`} onClick={() => navigate('/alerts')}>
+        <i className="fa-solid fa-triangle-exclamation"></i> Alerty AML
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/transactions' ? 'active' : ''}`} onClick={() => navigate('/transactions')}>
+        <i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/blacklist' ? 'active' : ''}`} onClick={() => navigate('/blacklist')}>
+        <i className="fa-solid fa-user-lock"></i> Zablokowani
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/insider-threat' ? 'active' : ''}`} onClick={() => navigate('/insider-threat')}>
+        <i className="fa-solid fa-user-secret"></i> Zagrożenia Wewnętrzne
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/statistics' ? 'active' : ''}`} onClick={() => navigate('/statistics')}>
+        <i className="fa-solid fa-chart-simple"></i> Statystyki
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>
+        <i className="fa-solid fa-gear"></i> Ustawienia
+    </div>
+    
+    <div className="sidebar-bottom">
+        <div className="nav-item" onClick={() => navigate('/')}>
+            <i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj
+        </div>
+    </div>
+</aside>
 
             
             <main className="main-content">

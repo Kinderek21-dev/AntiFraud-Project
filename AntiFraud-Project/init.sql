@@ -6,7 +6,8 @@ CREATE TABLE Administratorzy (
     haslo_hash VARCHAR(255) NOT NULL,
     imie_nazwisko VARCHAR(100) DEFAULT 'Nieznany',
     rola VARCHAR(100) DEFAULT 'Analityk',
-    email VARCHAR(100)
+    email VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'Aktywny'
 );
 
 CREATE TABLE Konta (
@@ -68,12 +69,10 @@ CREATE TABLE admin_audit_log (
     admin_id INT REFERENCES Administratorzy(UniqueID),
     id_transakcji INT REFERENCES Transakcje(UniqueID) ON DELETE CASCADE,
     akcja VARCHAR(50) NOT NULL,
-    notatka TEXT, 
+    notatka TEXT, -- Tego brakowało przy restarcie!
     czas_operacji TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE INDEX idx_audit_czas ON admin_audit_log(czas_operacji);
-
 
 
 
@@ -84,7 +83,6 @@ INSERT INTO Administratorzy (login, haslo_hash, imie_nazwisko, rola, email) VALU
 ('pwisniewski', crypt('haslo123', gen_salt('bf')), 'Piotr Wiśniewski', 'Młodszy Analityk SOC', 'p.wisniewski@bank.sys'),
 ('kmazur', crypt('haslo123', gen_salt('bf')), 'Katarzyna Mazur', 'Audytor Wewnętrzny', 'k.mazur@bank.sys'),
 ('jwojcik', crypt('haslo123', gen_salt('bf')), 'Jan Wójcik', 'Specjalista ds. Incydentów', 'j.wojcik@bank.sys');
-
 
 INSERT INTO Konta (nazwa_wlasciciela, login, haslo_hash, saldo) 
 VALUES ('Jan Kowalski', 'janek', crypt('haslo123', gen_salt('bf')), 25000.00);

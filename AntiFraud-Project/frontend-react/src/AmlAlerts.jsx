@@ -96,7 +96,6 @@ export default function AmlAlerts() {
         .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .page-title { font-size: 24px; font-weight: 700; color: #1E3A8A; }
         
-        /* Zmieniony pasek filtrów */
         .filters-bar { background: white; padding: 20px; border-radius: 15px; display: flex; gap: 20px; align-items: flex-end; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02); flex-wrap: wrap; }
         .filter-group { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 180px; }
         .filter-group label { font-size: 12px; font-weight: 600; color: #A3AED0; text-transform: uppercase; }
@@ -136,15 +135,33 @@ export default function AmlAlerts() {
 
             <aside className="sidebar">
                 <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
-                <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
-                <div className="nav-item active"><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-                <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
-                <div className="nav-item" onClick={() => navigate('/transactions')}><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
-                <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
-                <div className="nav-item" onClick={() => navigate('/blacklist')}><i className="fa-solid fa-ban"></i> Zablokowani</div>
+                
+                <div className={`nav-item ${window.location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => navigate('/dashboard')}>
+                    <i className="fa-solid fa-border-all"></i> Dashboard
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/alerts' ? 'active' : ''}`} onClick={() => navigate('/alerts')}>
+                    <i className="fa-solid fa-triangle-exclamation"></i> Alerty AML
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/transactions' ? 'active' : ''}`} onClick={() => navigate('/transactions')}>
+                    <i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/blacklist' ? 'active' : ''}`} onClick={() => navigate('/blacklist')}>
+                    <i className="fa-solid fa-user-lock"></i> Zablokowani
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/insider-threat' ? 'active' : ''}`} onClick={() => navigate('/insider-threat')}>
+                    <i className="fa-solid fa-user-secret"></i> Zagrożenia Wewnętrzne
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/statistics' ? 'active' : ''}`} onClick={() => navigate('/statistics')}>
+                    <i className="fa-solid fa-chart-simple"></i> Statystyki
+                </div>
+                <div className={`nav-item ${window.location.pathname === '/settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>
+                    <i className="fa-solid fa-gear"></i> Ustawienia
+                </div>
+                
                 <div className="sidebar-bottom">
-                    <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
-                    <div className="nav-item" onClick={() => navigate('/')}><i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj</div>
+                    <div className="nav-item" onClick={() => navigate('/')}>
+                        <i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj
+                    </div>
                 </div>
             </aside>
 

@@ -5,7 +5,7 @@ export default function Login() {
     const [view, setView] = useState('login');
     const [loginValue, setLoginValue] = useState('');
     const [passwordValue, setPasswordValue] = useState('');
-    const [nameValue, setNameValue] = useState(''); 
+    const [nameValue, setNameValue] = useState('');
     const navigate = useNavigate();
 
     const handleLogin = async (e) => {
@@ -19,11 +19,8 @@ export default function Login() {
 
             if (adminRes.ok) {
                 const adminData = await adminRes.json();
-
-                localStorage.setItem('adminId', adminData.admin_id);
-                localStorage.setItem('adminRole', adminData.role);
-                localStorage.setItem('adminName', adminData.name);
-
+                localStorage.setItem('admin_id', adminData.admin_id);
+                localStorage.setItem('admin_role', adminData.role);
                 navigate('/dashboard');
                 return;
             }
@@ -50,7 +47,6 @@ export default function Login() {
                 }
                 return;
             }
-
         } catch (error) {
             console.error("Błąd połączenia z API:", error);
             alert("Błąd połączenia z API.");
@@ -59,10 +55,9 @@ export default function Login() {
 
     const handleRegister = async (e) => {
         e.preventDefault();
-
         if (passwordValue.length < 6) {
             alert("Hasło musi składać się z minimum 6 znaków.");
-            return; 
+            return;
         }
 
         try {
@@ -73,9 +68,9 @@ export default function Login() {
             });
 
             const data = await res.json();
-
             if (res.ok) {
                 alert("Rejestracja udana! Możesz się teraz zalogować.");
+                setView('login');
             } else {
                 alert(`Błąd rejestracji: ${data.detail || "Nie udało się założyć konta."}`);
             }

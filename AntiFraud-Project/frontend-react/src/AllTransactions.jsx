@@ -40,28 +40,41 @@ export default function AllTransactions() {
     }, []);
 
     const handleManualApprove = async (txId) => {
-        const reason = window.prompt(`powód odblokowania przelewu #${txId}:`);
+        const reason = window.prompt(`Podaj powód odblokowania przelewu #${txId}:`);
 
         if (!reason || reason.trim() === "") {
-            alert("Operacja anulowana.");
+            alert("Operacja anulowana. Wymagane jest podanie uzasadnienia.");
             return;
         }
-        if (!window.confirm(`Czy na pewno chcesz odblokować przelew #${txId}?`)) return;
 
         try {
+            const currentAdminId = localStorage.getItem('admin_id'); 
+            
+            if (!currentAdminId) {
+                alert("Błąd: Nie jesteś zalogowany jako administrator!");
+                return;
+            }
+
             const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ admin_id: localStorage.getItem('adminId') || 1, reason: reason })
+                body: JSON.stringify({ 
+                    admin_id: Number(currentAdminId), 
+                    reason: reason 
+                })
             });
 
             if (res.ok) {
-                alert("Przelew został odblokowany!.");
+                alert("Przelew odblokowany.");
                 fetchHistory();
+                setSelectedAlert(null);
             } else {
-                alert("Błąd podczas zatwierdzania.");
+                const errorData = await res.json().catch(() => ({ detail: "Błąd serwera." }));
+                alert(`BŁĄD: ${errorData.detail}`);
             }
-        } catch (error) { console.error("Błąd:", error); }
+        } catch (error) { 
+            console.error("Błąd:", error); 
+        }
     };
 
     const handleFreezeUser = async (userId) => {
@@ -165,18 +178,36 @@ export default function AllTransactions() {
             <style>{styles}</style>
 
             <aside className="sidebar">
-                <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
-                <div className="nav-item" onClick={() => navigate('/dashboard')}><i className="fa-solid fa-border-all"></i> Dashboard</div>
-                <div className="nav-item" onClick={() => navigate('/alerts')}><i className="fa-solid fa-triangle-exclamation"></i> Alerty AML</div>
-                <div className="nav-item active"><i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji</div>
-                <div className="nav-item" onClick={() => navigate('/blacklist')}><i className="fa-solid fa-user-lock"></i> Zablokowani</div>
-                <div className="nav-item" onClick={() => navigate('/statistics')}><i className="fa-solid fa-chart-simple"></i> Statystyki</div>
-                <div className="nav-item" onClick={() => navigate('/settings')}><i className="fa-solid fa-gear"></i> Ustawienia</div>
-                <div className="sidebar-bottom">
-                    <div className="nav-item"><i className="fa-regular fa-user"></i> Administrator</div>
-                    <div className="nav-item" onClick={() => navigate('/')}><i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj</div>
-                </div>
-            </aside>
+    <div className="logo"><i className="fa-solid fa-shield-halved"></i> AntiFraud</div>
+    
+    <div className={`nav-item ${window.location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => navigate('/dashboard')}>
+        <i className="fa-solid fa-border-all"></i> Dashboard
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/alerts' ? 'active' : ''}`} onClick={() => navigate('/alerts')}>
+        <i className="fa-solid fa-triangle-exclamation"></i> Alerty AML
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/transactions' ? 'active' : ''}`} onClick={() => navigate('/transactions')}>
+        <i className="fa-solid fa-book-journal-whills"></i> Rejestr Transakcji
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/blacklist' ? 'active' : ''}`} onClick={() => navigate('/blacklist')}>
+        <i className="fa-solid fa-user-lock"></i> Zablokowani
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/insider-threat' ? 'active' : ''}`} onClick={() => navigate('/insider-threat')}>
+        <i className="fa-solid fa-user-secret"></i> Zagrożenia Wewnętrzne
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/statistics' ? 'active' : ''}`} onClick={() => navigate('/statistics')}>
+        <i className="fa-solid fa-chart-simple"></i> Statystyki
+    </div>
+    <div className={`nav-item ${window.location.pathname === '/settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>
+        <i className="fa-solid fa-gear"></i> Ustawienia
+    </div>
+    
+    <div className="sidebar-bottom">
+        <div className="nav-item" onClick={() => navigate('/')}>
+            <i className="fa-solid fa-arrow-right-from-bracket"></i> Wyloguj
+        </div>
+    </div>
+</aside>
 
             <main className="main-content">
                 <div className="page-header">
