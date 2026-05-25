@@ -321,23 +321,27 @@ def unblock_transaction(data: UnblockData):
 def login_user(data: LoginData):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT uniqueid, haslo_hash, rola, imie_nazwisko FROM Administratorzy WHERE login = %s;", (data.login,))
+    cur.execute("SELECT uniqueid, haslo_hash, rola FROM Administratorzy WHERE login = %s;", (data.login,))
     result = cur.fetchone()
     cur.close()
     conn.close()
+    
     if not result: raise HTTPException(status_code=401)
-    admin_id, db_hash, rola, imie = result
+    
+    admin_id = result[0]
+    db_hash = result[1]
+    rola = result[2]
+    
     try:
         if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
             return {
-                "status": "success", 
-                "admin_id": admin_id, 
-                "role": rola,
-                "name": imie
+                "status": "success",
+                "admin_id": admin_id,
+                "role": rola
             }
     except:
         pass
-    raise HTTPException(status_code=401, detail="Błędne hasło admina")
+    raise HTTPException(status_code=401)
 
 @app.get("/api/settings")
 def get_settings():
@@ -618,33 +622,21 @@ def get_global_ledger():
 def admin_approve_transaction(tx_id: int, data: AdminApproveData):
     conn = get_db_connection()
     cur = conn.cursor()
-    
     try:
         cur.execute("BEGIN;")
+        cur.execute("UPDATE Transakcje SET status_analizy = 'Zatwierdzona_Recznie' WHERE uniqueid = %s;", (tx_id,))
+        cur.execute("UPDATE Wyniki_ML SET status = 'Zatwierdzona_Recznie' WHERE id_transkacji = %s;", (tx_id,))
         
         cur.execute("""
-            UPDATE Transakcje 
-            SET status_analizy = 'Zatwierdzona_Recznie' 
-            WHERE uniqueid = %s;
-        """, (tx_id,))
-        
-        cur.execute("""
-            UPDATE Wyniki_ML 
-            SET status = 'Zatwierdzona_Recznie' 
-            WHERE id_transkacji = %s;
-        """, (tx_id,))
-        
-        cur.execute("""
-            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja)
-            VALUES (%s, %s, 'MANUAL_APPROVE');
-        """, (data.admin_id, tx_id))
+            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja, notatka)
+            VALUES (%s, %s, 'MANUAL_APPROVE', %s);
+        """, (data.admin_id, tx_id, data.reason))
         
         conn.commit()
         return {"status": "success", "message": "Przelew zatwierdzony, audyt zapisany."}
-        
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd transakcji SQL (Rollback): {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Błąd: {str(e)}")
     finally:
         cur.close()
         conn.close()
@@ -782,4 +774,110 @@ def get_all_admins():
         return admin_list
     except Exception as e:
         print(f"BŁĄD SQL W ADMIN LIST: {e}") 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/admin/transactions/{tx_id}/audit")
+def get_transaction_audit(tx_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT a.imie_nazwisko, a.rola, l.akcja, l.notatka, l.data_logu 
+            FROM admin_audit_log l
+            JOIN Administratorzy a ON l.admin_id = a.uniqueid
+            WHERE l.id_transakcji = %s
+            ORDER BY l.data_logu DESC LIMIT 1;
+        """, (tx_id,))
+        res = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if res:
+            czas = res[4].strftime("%Y-%m-%d %H:%M") if res[4] else "Brak danych" 
+            return {"admin": res[0], "role": res[1], "action": res[2], "reason": res[3], "timestamp": czas}
+        return {"message": "Brak notatek dla tej transakcji."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/audit-log/{admin_id}")
+def get_admin_audit_log(admin_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("SELECT login, rola FROM Administratorzy WHERE uniqueid = %s;", (admin_id,))
+        admin_data = cur.fetchone()
+        if not admin_data:
+            raise HTTPException(status_code=404, detail="Admin nie znaleziony")
+            
+        admin_name = admin_data[0]
+        admin_role = admin_data[1]
+
+        cur.execute("""
+            SELECT TO_CHAR(l.czas_operacji, 'YYYY-MM-DD HH24:MI') as timestamp,
+                   l.id_transakcji as tx_id,
+                   l.akcja as action,
+                   COALESCE(w.ocena_anomali, 0.0) as ml_score,
+                   COALESCE(t.kwota, 0.0) as amount,
+                   l.notatka as reason
+            FROM admin_audit_log l
+            LEFT JOIN Transakcje t ON l.id_transakcji = t.uniqueid
+            LEFT JOIN Wyniki_ML w ON l.id_transakcji = w.id_transkacji
+            WHERE l.admin_id = %s
+            ORDER BY l.czas_operacji DESC;
+        """, (admin_id,))
+        
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        total_actions = len(rows)
+        transfers_unlocked = 0
+        transfers_blocked = 0
+        high_risk_unlocked = 0
+        ml_score_sum = 0.0
+        ml_score_count = 0
+
+        history = []
+
+        for row in rows:
+            action = row[2]
+            score = float(row[3])
+            
+            history.append({
+                "timestamp": row[0],
+                "tx_id": row[1],
+                "action": action,
+                "ml_score": score,
+                "amount": float(row[4]),
+                "reason": row[5] or "Brak notatki"
+            })
+            
+            if action == 'MANUAL_APPROVE':
+                transfers_unlocked += 1
+                ml_score_sum += score
+                ml_score_count += 1
+                if score >= 0.95:
+                    high_risk_unlocked += 1
+            elif action.startswith('USER_BLOCK'):
+                transfers_blocked += 1
+
+        avg_ml_score = round(ml_score_sum / ml_score_count, 2) if ml_score_count > 0 else 0.0
+
+        return {
+            "admin_name": admin_name,
+            "role": admin_role,
+            "stats": {
+                "total_actions": total_actions,
+                "transfers_blocked": transfers_blocked,
+                "transfers_unlocked": transfers_unlocked,
+                "avg_ml_score": avg_ml_score,
+                "high_risk_unlocked": high_risk_unlocked
+            },
+            "history": history
+        }
+
+    except Exception as e:
+        print(f"BŁĄD W AUDIT-LOG: {e}")
         raise HTTPException(status_code=500, detail=str(e))

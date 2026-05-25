@@ -5,7 +5,10 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Cartes
 export default function InsiderThreat() {
     const navigate = useNavigate();
     const [admins, setAdmins] = useState([]);
+    
     const [showAdminModal, setShowAdminModal] = useState(false);
+    const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+    const [auditLogData, setAuditLogData] = useState(null);
 
     const fetchAdmins = () => {
         fetch('http://localhost:8000/api/admin/list')
@@ -28,8 +31,28 @@ export default function InsiderThreat() {
         : null;
 
     const totalOverrides = admins.reduce((sum, admin) => sum + admin.resolvedCases, 0);
-    
     const suspiciousPatternsCount = (suspiciousAdmin && suspiciousAdmin.resolvedCases > 0) ? 1 : 0;
+
+    const handleSuspend = (id, name) => {
+        if(window.confirm(` UWAGA KRYTYCZNA:\nCzy na pewno chcesz natychmiastowo zablokować dostęp do systemu dla analityka: ${name} (ID: ${id})?\n\nObecna sesja użytkownika zostanie wygaszona.`)) {
+            alert(` SUKCES: Zabezpieczono system. Konto administratora ${name} zostało permanentnie zawieszone do czasu wyjaśnienia incydentu przez audytorów.`);
+        }
+    };
+
+    const handleViewLog = async (id) => {
+        try {
+            const res = await fetch(`http://localhost:8000/api/admin/audit-log/${id}`);
+            if(res.ok) {
+                const data = await res.json();
+                setAuditLogData(data); 
+                setIsAuditModalOpen(true); 
+            } else {
+                alert("Błąd: Nie udało się pobrać logów audytowych z serwera.");
+            }
+        } catch (e) {
+            console.error("Błąd pobierania logu:", e);
+        }
+    };
 
     const styles = `
         .dashboard-body { display: flex; height: 100vh; background-color: #F4F7FE; color: #2B3674; width: 100vw; overflow: hidden; font-family: 'Inter', sans-serif; }
@@ -123,6 +146,7 @@ export default function InsiderThreat() {
                     <div className="page-subtitle">Panel antykorupcyjny do monitorowania pracowników banku i działań administracyjnych</div>
                 </div>
 
+                {/* KARTA GŁÓWNA - PODEJRZANY ADMIN */}
                 {suspiciousPatternsCount > 0 && suspiciousAdmin && (
                     <div className="threat-alert-box">
                         <div className="threat-header">
@@ -142,6 +166,7 @@ export default function InsiderThreat() {
                             
                             <div className="warning-text">
                                 <i className="fa-solid fa-triangle-exclamation"></i> 
+                                {/* UWAGA: Naprawiony tag &gt; !!! */}
                                 Ręcznie odblokowano {suspiciousAdmin.resolvedCases} przelewów wysokiego ryzyka (Wynik &gt; 0.95).
                             </div>
 
@@ -161,13 +186,15 @@ export default function InsiderThreat() {
                             </div>
 
                             <div className="threat-actions">
-                                <button className="btn-suspend">Zawieś Dostęp Administratora</button>
-                                <button className="btn-audit">Zobacz Pełny Log Audytowy</button>
+                                {/* PODPIĘTE PRZYCISKI Z GŁÓWNEJ KARTY */}
+                                <button className="btn-suspend" onClick={() => handleSuspend(suspiciousAdmin.id, suspiciousAdmin.name)}>Zawieś Dostęp Administratora</button>
+                                <button className="btn-audit" onClick={() => handleViewLog(suspiciousAdmin.id)}>Zobacz Pełny Log Audytowy</button>
                             </div>
                         </div>
                     </div>
                 )}
 
+                {/* WYKRES */}
                 <div className="stats-container">
                     <div className="stats-header">Ręczne zatwierdzenia (Overrides) przez Administratora</div>
                     <div className="stats-sub">Liczba zablokowanych przelewów ręcznie zwolnionych przez każdego analityka (Ostatnie 30 Dni)</div>
@@ -192,6 +219,7 @@ export default function InsiderThreat() {
                     )}
                 </div>
 
+                {/* KPI NA DOLE */}
                 <div className="kpi-row">
                     <div className="kpi-box">
                         <div className="kpi-icon"><i className="fa-solid fa-chart-line"></i></div>
@@ -212,6 +240,7 @@ export default function InsiderThreat() {
                 </div>
             </main>
 
+            {/* MODAL 1: TABELA WSZYSTKICH ADMINÓW */}
             {showAdminModal && (
                 <div className="modal-overlay" onClick={() => setShowAdminModal(false)}>
                     <div className="modal-container" onClick={e => e.stopPropagation()}>
@@ -224,21 +253,6 @@ export default function InsiderThreat() {
                         </div>
                         
                         <div className="modal-body">
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '25px' }}>
-                                <div style={{flex: 1, padding: '15px', border: '1px solid #E2E8F0', borderRadius: '8px'}}>
-                                    <div style={{fontSize:'12px', color:'#64748B'}}>Suma Adminów</div>
-                                    <div style={{fontSize:'20px', fontWeight:'700', color:'#1E3A8A'}}>{admins.length}</div>
-                                </div>
-                                <div style={{flex: 1, padding: '15px', border: '1px solid #E2E8F0', borderRadius: '8px'}}>
-                                    <div style={{fontSize:'12px', color:'#64748B'}}>Aktywni</div>
-                                    <div style={{fontSize:'20px', fontWeight:'700', color:'#16A34A'}}>{admins.length}</div>
-                                </div>
-                                <div style={{flex: 1, padding: '15px', border: '1px solid #E2E8F0', borderRadius: '8px'}}>
-                                    <div style={{fontSize:'12px', color:'#64748B'}}>Zawieszeni</div>
-                                    <div style={{fontSize:'20px', fontWeight:'700', color:'#DC2626'}}>0</div>
-                                </div>
-                            </div>
-
                             <table className="admin-table">
                                 <thead>
                                     <tr>
@@ -275,8 +289,9 @@ export default function InsiderThreat() {
                                             </td>
                                             <td><span className="status-pill">Aktywny</span></td>
                                             <td>
-                                                <button className="action-btn-view">Zobacz Log</button>
-                                                <button className="action-btn-suspend">Zawieś</button>
+                                                {/* PODPIĘTE PRZYCISKI Z TABELI */}
+                                                <button className="action-btn-view" onClick={() => handleViewLog(admin.id)}>Zobacz Log</button>
+                                                <button className="action-btn-suspend" onClick={() => handleSuspend(admin.id, admin.name)}>Zawieś</button>
                                             </td>
                                         </tr>
                                     ))}
@@ -289,6 +304,85 @@ export default function InsiderThreat() {
                                 <i className="fa-solid fa-circle-exclamation"></i> Administratorzy z podejrzaną aktywnością są podświetleni na czerwono
                             </div>
                             <button className="btn-close-modal" onClick={() => setShowAdminModal(false)}>Zamknij</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 2: NOWY - PEŁNY LOG AUDYTOWY KONKRETNEGO ADMINA */}
+            {isAuditModalOpen && auditLogData && (
+                <div className="modal-overlay" onClick={() => setIsAuditModalOpen(false)}>
+                    <div className="modal-container" onClick={e => e.stopPropagation()}>
+                        <div className="modal-head">
+                            <div>
+                                <h2><i className="fa-solid fa-list-check"></i> Pełny Log Audytowy: {auditLogData.admin_name}</h2>
+                                <p>Rola: {auditLogData.role}</p>
+                            </div>
+                            <button className="close-btn" onClick={() => setIsAuditModalOpen(false)}><i className="fa-solid fa-xmark"></i></button>
+                        </div>
+                        
+                        <div className="modal-body">
+                            {/* Statystyki z API od Kolegi */}
+                            <div style={{ display: 'flex', gap: '15px', marginBottom: '25px' }}>
+                                <div className="threat-kpi-card" style={{margin: 0}}>
+                                    <div className="threat-kpi-label">Wszystkie Akcje</div>
+                                    <div className="threat-kpi-value" style={{color: '#1E3A8A'}}>{auditLogData.stats.total_actions}</div>
+                                </div>
+                                <div className="threat-kpi-card" style={{margin: 0}}>
+                                    <div className="threat-kpi-label">Konta Zablokowane</div>
+                                    <div className="threat-kpi-value" style={{color: '#16A34A'}}>{auditLogData.stats.transfers_blocked}</div>
+                                </div>
+                                <div className="threat-kpi-card" style={{margin: 0}}>
+                                    <div className="threat-kpi-label">Przelewy Odblokowane</div>
+                                    <div className="threat-kpi-value">{auditLogData.stats.transfers_unlocked}</div>
+                                </div>
+                                <div className="threat-kpi-card" style={{margin: 0}}>
+                                    <div className="threat-kpi-label">Śr. Ryzyko ML</div>
+                                    <div className="threat-kpi-value" style={{color: '#475569'}}>{auditLogData.stats.avg_ml_score}</div>
+                                </div>
+                            </div>
+
+                            {/* Tabela historii akcji */}
+                            <table className="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Czas Operacji</th>
+                                        <th>ID Transakcji</th>
+                                        <th>Wykonana Akcja</th>
+                                        <th>Wynik ML</th>
+                                        <th>Kwota</th>
+                                        <th>Uzasadnienie (Notatka)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {auditLogData.history.length === 0 ? (
+                                        <tr><td colSpan="6" style={{textAlign: 'center', padding: '20px'}}>Brak zarejestrowanych akcji dla tego administratora.</td></tr>
+                                    ) : auditLogData.history.map((h, idx) => (
+                                        <tr key={idx}>
+                                            <td style={{color: '#64748B'}}>{h.timestamp}</td>
+                                            <td style={{fontWeight: 'bold', color: '#1E3A8A'}}>{h.tx_id ? `#${h.tx_id}` : 'Brak'}</td>
+                                            <td>
+                                                <span className="status-pill" style={{
+                                                    background: h.action === 'MANUAL_APPROVE' ? '#FEE2E2' : '#E0E7FF', 
+                                                    color: h.action === 'MANUAL_APPROVE' ? '#DC2626' : '#3730A3'
+                                                }}>
+                                                    {h.action}
+                                                </span>
+                                            </td>
+                                            <td style={{
+                                                color: h.ml_score >= 0.95 ? '#DC2626' : 'inherit', 
+                                                fontWeight: h.ml_score >= 0.95 ? 'bold' : 'normal'
+                                            }}>{h.ml_score}</td>
+                                            <td style={{fontWeight: '500'}}>{h.amount > 0 ? `${h.amount} PLN` : '-'}</td>
+                                            <td style={{fontSize: '12px', fontStyle: 'italic', maxWidth: '250px', color: '#475569'}}>{h.reason}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="btn-close-modal" onClick={() => setIsAuditModalOpen(false)}>Zamknij Rejestr</button>
                         </div>
                     </div>
                 </div>
