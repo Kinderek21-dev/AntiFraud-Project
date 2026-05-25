@@ -13,6 +13,7 @@ export default function AllTransactions() {
     const [statusFilter, setStatusFilter] = useState('all');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
+    const [auditData, setAuditData] = useState(null);
 
     const fetchGraphData = async () => {
         try {
@@ -27,12 +28,20 @@ export default function AllTransactions() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch('http://localhost:8000/api/admin/transakcje/wszystkie');
+            const res = await fetch(`http://localhost:8000/api/admin/transakcje/wszystkie?t=${new Date().getTime()}`, {
+                cache: 'no-store',
+                headers: {
+                    'Pragma': 'no-cache'
+                }
+            });
+
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) setAlerts(data);
             }
-        } catch (error) { console.error("Błąd API:", error); }
+        } catch (error) {
+            console.error("Błąd API:", error);
+        }
     };
 
     useEffect(() => {
@@ -48,32 +57,32 @@ export default function AllTransactions() {
         }
 
         try {
-            const currentAdminId = localStorage.getItem('admin_id'); 
-            
+            const currentAdminId = localStorage.getItem('adminId') || localStorage.getItem('admin_id');
+
             if (!currentAdminId) {
-                alert("Błąd: Nie jesteś zalogowany jako administrator!");
+                alert("Błąd krytyczny: Nie wykryto aktywnej sesji administratora. Zaloguj się ponownie!");
                 return;
             }
 
             const res = await fetch(`http://localhost:8000/api/admin/alerts/${txId}/approve`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    admin_id: Number(currentAdminId), 
-                    reason: reason 
+                body: JSON.stringify({
+                    admin_id: Number(currentAdminId),
+                    reason: reason
                 })
             });
 
             if (res.ok) {
-                alert("Przelew odblokowany.");
-                fetchHistory();
-                setSelectedAlert(null);
+                alert("Przelew odblokowany! Pomyślnie zapisano audyt.");
+                fetchHistory(); 
+                setSelectedAlert(null); 
             } else {
-                const errorData = await res.json().catch(() => ({ detail: "Błąd serwera." }));
-                alert(`BŁĄD: ${errorData.detail}`);
+                const errorData = await res.json().catch(() => ({ detail: "Błąd serwera bazy danych." }));
+                alert(`BŁĄD ZATWIERDZANIA: ${errorData.detail}`);
             }
-        } catch (error) { 
-            console.error("Błąd:", error); 
+        } catch (error) {
+            console.error("Błąd sieci:", error);
         }
     };
 
@@ -95,6 +104,21 @@ export default function AllTransactions() {
         }
     };
 
+    const handleSelectAlert = async (alertInfo) => {
+        setSelectedAlert(alertInfo);
+        setAuditData(null); 
+
+        if (alertInfo.status_analizy === 'Zatwierdzona_Recznie') {
+            try {
+                const res = await fetch(`http://localhost:8000/api/admin/transactions/${alertInfo.id}/audit`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.reason) setAuditData(data);
+                }
+            } catch (e) { console.error(e); }
+        }
+    };
+
     const filteredAlerts = alerts.filter(a => {
         const matchSearch =
             String(a.id).toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -108,9 +132,25 @@ export default function AllTransactions() {
 
         let matchDateFrom = true;
         let matchDateTo = true;
-        const alertDate = new Date(a.data || a.date); 
-        if (dateFrom) matchDateFrom = alertDate >= new Date(dateFrom);
-        if (dateTo) matchDateTo = alertDate <= new Date(dateTo + 'T23:59:59');
+
+        const dateStr = a.data || a.date;
+        if (dateStr) {
+            const cleanAlertDateStr = String(dateStr).slice(0, 10);
+            const alertDateTime = new Date(cleanAlertDateStr).getTime();
+
+            if (dateFrom) {
+                const fromTime = new Date(dateFrom).getTime();
+                if (!isNaN(alertDateTime) && !isNaN(fromTime)) {
+                    matchDateFrom = alertDateTime >= fromTime;
+                }
+            }
+            if (dateTo) {
+                const toTime = new Date(dateTo).getTime();
+                if (!isNaN(alertDateTime) && !isNaN(toTime)) {
+                    matchDateTo = alertDateTime <= toTime;
+                }
+            }
+        }
 
         return matchSearch && matchStatus && matchDateFrom && matchDateTo;
     });
@@ -281,7 +321,7 @@ export default function AllTransactions() {
                                         {alert.status_analizy === 'Oczekujaca' && <span className="score-badge score-orange">Oczekuje</span>}
                                     </td>
                                     <td>
-                                        <button className="btn-outline" onClick={() => setSelectedAlert(alert)}>Szczegóły</button>
+                                        <button className="btn-outline" onClick={() => handleSelectAlert(alert)}>Szczegóły</button>
 
                                         {(alert.status_analizy === 'Zablokowana' || alert.status_analizy === 'Do_Weryfikacji') && (
                                             <button className="btn-approve" onClick={() => handleManualApprove(alert.id)}>
@@ -322,7 +362,17 @@ export default function AllTransactions() {
                             <div className="detail-label">Kwota Transakcji</div>
                             <div className="detail-value" style={{ fontSize: '20px', fontWeight: '700' }}>{selectedAlert.kwota} PLN</div>
                         </div>
-
+                        {auditData && auditData.reason && (
+                            <div style={{ marginTop: '20px', padding: '15px', background: '#F8FAFC', borderLeft: '4px solid #10B981', borderRadius: '4px' }}>
+                                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 'bold', marginBottom: '5px', textTransform: 'uppercase' }}>
+                                    <i className="fa-solid fa-user-shield"></i> Odblokowano Ręcznie przez: {auditData.admin}
+                                </div>
+                                <div style={{ fontSize: '14px', color: '#1E293B', fontStyle: 'italic' }}>
+                                    "{auditData.reason}"
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '5px' }}>Czas autoryzacji: {auditData.timestamp}</div>
+                            </div>
+                        )}
                         <button
                             className="btn-export"
                             style={{ marginTop: '20px', width: '100%', justifyContent: 'center', background: '#2B3674' }}

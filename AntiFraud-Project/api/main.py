@@ -321,16 +321,24 @@ def unblock_transaction(data: UnblockData):
 def login_user(data: LoginData):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT uniqueid, haslo_hash, rola FROM Administratorzy WHERE login = %s;", (data.login,))
+    cur.execute("SELECT uniqueid, haslo_hash, rola, status FROM Administratorzy WHERE login = %s;", (data.login,))
     result = cur.fetchone()
     cur.close()
     conn.close()
     
-    if not result: raise HTTPException(status_code=401)
+    if not result: 
+        raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło admina")
     
     admin_id = result[0]
     db_hash = result[1]
     rola = result[2]
+    status = result[3]
+    
+    if status == 'Zawieszony':
+        raise HTTPException(
+            status_code=403, 
+            detail="Dostęp zablokowany. To konto administratora zostało zawieszone przez audyt wewnętrzny."
+        )
     
     try:
         if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
@@ -341,7 +349,7 @@ def login_user(data: LoginData):
             }
     except:
         pass
-    raise HTTPException(status_code=401)
+    raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło admina")
 
 @app.get("/api/settings")
 def get_settings():
@@ -597,7 +605,7 @@ def get_global_ledger():
                    TO_CHAR(czas_transakcji, 'YYYY-MM-DD HH24:MI:SS'), status_operacji, status_analizy
             FROM Transakcje
             ORDER BY czas_transakcji DESC 
-            LIMIT 500;
+            LIMIT 50000;
         """)
         
         ledger = []
@@ -750,10 +758,10 @@ def get_all_admins():
         cur = conn.cursor()
         
         cur.execute("""
-            SELECT a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, COUNT(l.id) as resolved_cases
+            SELECT a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, a.status, COUNT(l.id) as resolved_cases
             FROM Administratorzy a
             LEFT JOIN admin_audit_log l ON a.uniqueid = l.admin_id AND l.akcja = 'MANUAL_APPROVE'
-            GROUP BY a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email
+            GROUP BY a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, a.status
             ORDER BY resolved_cases DESC, a.uniqueid ASC;
         """)
         
@@ -765,8 +773,8 @@ def get_all_admins():
                 "role": row[2],
                 "name": row[3],
                 "email": row[4],
-                "resolvedCases": row[5],
-                "status": "Active" 
+                "status": row[5], 
+                "resolvedCases": row[6]
             })
             
         cur.close()
@@ -880,4 +888,19 @@ def get_admin_audit_log(admin_id: int):
 
     except Exception as e:
         print(f"BŁĄD W AUDIT-LOG: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/{admin_id}/suspend")
+def suspend_admin(admin_id: int):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE Administratorzy SET status = 'Zawieszony' WHERE uniqueid = %s;", (admin_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success", "message": "Admin został zawieszony w bazie"}
+    except Exception as e:
+        if 'conn' in locals(): conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

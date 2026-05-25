@@ -17,12 +17,19 @@ export default function Login() {
                 body: JSON.stringify({ login: loginValue, password: passwordValue })
             });
 
+            const adminData = await adminRes.json();
+
             if (adminRes.ok) {
-                const adminData = await adminRes.json();
-                localStorage.setItem('admin_id', adminData.admin_id);
-                localStorage.setItem('admin_role', adminData.role);
+                localStorage.setItem('adminId', adminData.admin_id);
+                localStorage.setItem('adminRole', adminData.role);
+                localStorage.setItem('adminName', adminData.name);
                 navigate('/dashboard');
                 return;
+            } else {
+                if (adminRes.status === 403) {
+                    alert(`BLOKADA SYSTEMOWA: ${adminData.detail}`);
+                    return; 
+                }
             }
 
             const userRes = await fetch('http://localhost:8000/api/user/login', {

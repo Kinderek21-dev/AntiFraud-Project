@@ -9,7 +9,6 @@ export default function InsiderThreat() {
     const [showAdminModal, setShowAdminModal] = useState(false);
     const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
     const [auditLogData, setAuditLogData] = useState(null);
-    const [suspendedAdminIds, setSuspendedAdminIds] = useState([]);
 
     const fetchAdmins = () => {
         fetch('http://localhost:8000/api/admin/list')
@@ -35,15 +34,15 @@ export default function InsiderThreat() {
     const suspiciousPatternsCount = (suspiciousAdmin && suspiciousAdmin.resolvedCases > 0) ? 1 : 0;
 
     const handleSuspend = async (id, name) => {
-        if(window.confirm(`⚠ UWAGA KRYTYCZNA:\nCzy na pewno chcesz natychmiastowo zablokować dostęp do systemu dla analityka: ${name} (ID: ${id})?\n\nObecna sesja użytkownika zostanie wygaszona.`)) {
+        if (window.confirm(`⚠ UWAGA KRYTYCZNA:\nCzy na pewno chcesz natychmiastowo zablokować dostęp do systemu dla analityka: ${name} (ID: ${id})?\n\nObecna sesja użytkownika zostanie wygaszona.`)) {
             try {
                 const res = await fetch(`http://localhost:8000/api/admin/${id}/suspend`, {
                     method: 'POST'
                 });
-                
+
                 if (res.ok) {
-                    setSuspendedAdminIds(prevIds => [...prevIds, id]);
-                    alert(` SUKCES: Zabezpieczono system. Konto administratora ${name} zostało permanentnie zawieszone do czasu wyjaśnienia incydentu przez audytorów.`);
+                    fetchAdmins();
+                    alert(`SUKCES: Zabezpieczono system. Konto administratora ${name} zostało permanentnie zawieszone.`);
                 } else {
                     alert("Wystąpił błąd po stronie serwera podczas zawieszania.");
                 }
@@ -292,7 +291,7 @@ export default function InsiderThreat() {
                                 </thead>
                                 <tbody>
     {admins.map(admin => {
-        const isSuspended = suspendedAdminIds.includes(admin.id);
+        const isSuspended = admin.status === 'Zawieszony';
 
         return (
         <tr key={admin.id} style={{ opacity: isSuspended ? 0.5 : 1 }}>

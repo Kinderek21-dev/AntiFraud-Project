@@ -69,7 +69,7 @@ CREATE TABLE admin_audit_log (
     admin_id INT REFERENCES Administratorzy(UniqueID),
     id_transakcji INT REFERENCES Transakcje(UniqueID) ON DELETE CASCADE,
     akcja VARCHAR(50) NOT NULL,
-    notatka TEXT, -- Tego brakowało przy restarcie!
+    notatka TEXT,
     czas_operacji TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_audit_czas ON admin_audit_log(czas_operacji);
