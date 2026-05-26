@@ -8,8 +8,18 @@ import json
 import jwt
 from datetime import datetime, timedelta
 import asyncio
+from sqlalchemy.orm import Session
+from fastapi import Depends
+from database import SessionLocal, engine
+import models
 
 app = FastAPI()
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 app.add_middleware(
     CORSMiddleware,
@@ -376,18 +386,21 @@ def update_alert_status(alert_id: str, data: StatusData):
         return {"error": str(e)}
 
 @app.get("/api/stats")
-def get_stats():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM Transakcje;")
-        total_transactions = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM Wyniki_ML WHERE czy_podejrzana = true;")
-        total_anomalies = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        return {"analyzed_transactions": total_transactions, "detected_anomalies": total_anomalies}
-    except Exception as e: return {"error": str(e)}
+def get_stats(db: Session = Depends(get_db)):
+    #try:
+    #    conn = get_db_connection()
+    #    cur = conn.cursor()
+    #    cur.execute("SELECT COUNT(*) FROM Transakcje;")
+    #    total_transactions = cur.fetchone()[0]
+    #    cur.execute("SELECT COUNT(*) FROM Wyniki_ML WHERE czy_podejrzana = true;")
+    #    total_anomalies = cur.fetchone()[0]
+    #    cur.close()
+    #    conn.close()
+    #    return {"analyzed_transactions": total_transactions, "detected_anomalies": total_anomalies}
+  #  except Exception as e: return {"error": str(e)}
+    total_transactions = db.query(models.Transakcja).count()
+    total_anomalies = db.query(models.WynikML).filter(models.WynikML.czy_podejrzana == True).count()
+    return {"analyzed_transactions": total_transactions, "detected_anomalies": total_anomalies}
 
 @app.get("/api/chart")
 def get_chart_data(filter: str = "live"):
