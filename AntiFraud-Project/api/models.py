@@ -9,6 +9,7 @@ class Administrator(Base):
     rola = Column(String)
     imie_nazwisko = Column(String)
     status = Column(String, default="Aktywny")
+    email = Column(String)
 
 class Konto(Base):
     __tablename__ = "konta"
@@ -43,3 +44,8 @@ class AdminAuditLog(Base):
     akcja = Column(String)
     notatka = Column(String)
 
+class ZaufanyOdbiorca(Base):
+    __tablename__ = "Zaufani_Odbiorcy"
+    id = Column(Integer, primary_key=True, index=True)
+    id_nadawcy = Column(Integer)
+    id_odbiorcy = Column(Integer)

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 from database import SessionLocal, engine
 import models
+from sqlalchemy import func 
 from sqlalchemy import or_
 
 from sqlalchemy import func, case, desc
@@ -162,26 +163,26 @@ def login_user_portal(data: LoginData, db: Session = Depends(get_db)):
     raise HTTPException(status_code=401, detail="Błędne hasło")
 
 @app.post("/api/user/register")
-def register_user(data: RegisterData):
-    if len(data.password) < 6:
-        raise HTTPException(status_code=400, detail="Hasło musi składać się z minimum 6 znaków.")
-    conn = get_db_connection()
-    cur = conn.cursor()
+def user_register(data: RegisterData, db: Session = Depends(get_db)):
+    istniejace_konto = db.query(models.Konto).filter(models.Konto.login == data.login).first()
+    
+    if istniejace_konto:
+        raise HTTPException(status_code=400, detail="Ten login jest już w użyciu.")
+
+    nowe_konto = models.Konto(
+        nazwa_wlasciciela=data.name,
+        login=data.login,
+        haslo_hash=func.crypt(data.password, func.gen_salt('bf'))
+    )
+    
+    db.add(nowe_konto)
+    
     try:
-        hashed_pw = bcrypt.hashpw(data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        cur.execute("""
-            INSERT INTO Konta (nazwa_wlasciciela, login, haslo_hash, saldo) 
-            VALUES (%s, %s, %s, 10000.00) RETURNING uniqueid;
-        """, (data.name, data.login, hashed_pw))
-        new_id = cur.fetchone()[0]
-        conn.commit()
-        return {"status": "success", "user_id": new_id}
+        db.commit()
+        return {"status": "success", "message": "Konto zostało utworzone poprawnie."}
     except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail="Login jest już zajęty lub wystąpił błąd bazy")
-    finally:
-        cur.close()
-        conn.close()
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Błąd systemu podczas tworzenia konta.")
 
 @app.get("/api/user/{user_id}/dashboard")
 def get_user_dashboard(user_id: int):
@@ -222,103 +223,65 @@ def get_user_dashboard(user_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/user/transfer")
-def make_transfer(data: TransferData):
+def create_transfer(data: TransferData, db: Session = Depends(get_db)):
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="Kwota przelewu musi być większa niż zero.")
+
+    nadawca = db.query(models.Konto).filter(models.Konto.uniqueid == data.sender_id).first()
+    odbiorca = db.query(models.Konto).filter(models.Konto.uniqueid == data.receiver_id).first()
+
+    if not nadawca or nadawca.status != 'Aktywne':
+        raise HTTPException(status_code=403, detail="Konto nadawcy nie istnieje lub jest zablokowane.")
+    
+    if not odbiorca:
+        raise HTTPException(status_code=404, detail="Konto odbiorcy nie istnieje.")
+
+    if nadawca.saldo < data.amount:
+        raise HTTPException(status_code=400, detail="Brak wystarczających środków na koncie.")
+
+    nadawca.saldo -= data.amount
+    odbiorca.saldo += data.amount
+
+    nowa_transakcja = models.Transakcja(
+        id_konta_nadawcy=data.sender_id,
+        id_konta_odbiorcy=data.receiver_id,
+        kwota=data.amount,
+        status_operacji='Zrealizowana',
+        status_analizy='Oczekujaca'
+    )
+    
+    db.add(nowa_transakcja)
+
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("SELECT status FROM Konta WHERE uniqueid = %s;", (data.sender_id,))
-        sender_status = cur.fetchone()
-        if sender_status and sender_status[0] == 'Zablokowane':
-            raise HTTPException(
-                status_code=403, 
-                detail="Operacja odrzucona. Konto nadawcy posiada status: Zablokowane."
-            )
-            
-        if data.amount <= 0:
-            raise HTTPException(status_code=400, detail="Błąd: Kwota przelewu musi być większa niż 0.00 PLN.")
-
-        id_odbiorcy_koncowy = None
-        if data.receiver_id:
-            cur.execute("SELECT uniqueid FROM Konta WHERE uniqueid = %s;", (data.receiver_id,))
-            wynik = cur.fetchone()
-            if wynik: id_odbiorcy_koncowy = wynik[0]
-        elif data.receiver_name:
-            cur.execute("SELECT uniqueid FROM Konta WHERE nazwa_wlasciciela = %s;", (data.receiver_name,))
-            wynik = cur.fetchone()
-            if wynik: id_odbiorcy_koncowy = wynik[0]
-
-        if id_odbiorcy_koncowy is None:
-            raise HTTPException(status_code=404, detail="Błąd operacji: Odbiorca nie istnieje.")
-
-        teraz_polska = datetime.utcnow() + timedelta(hours=2)
-        czy_przyszly = False
-        data_sql_zformatowana = None
-        
-        if data.data_wykonania and data.typ_przelewu != "natychmiastowy":
-            try:
-                data_obiekt = datetime.strptime(data.data_wykonania, "%Y-%m-%dT%H:%M")
-                if data_obiekt > teraz_polska:
-                    czy_przyszly = True
-                data_sql_zformatowana = data_obiekt.strftime("%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Błąd formatu daty i czasu.")
-
-        if czy_przyszly:
-            status_operacji_koncowy = "Zaplanowana" if data.typ_przelewu == "zaplanowany" else "Cykliczna"
-            cur.execute("""
-                INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy, czas_transakcji)
-                VALUES (%s, %s, %s, %s, 'Oczekujaca', %s) RETURNING uniqueid;
-            """, (data.sender_id, id_odbiorcy_koncowy, data.amount, status_operacji_koncowy, data_sql_zformatowana))
-            new_id = cur.fetchone()[0]
-            conn.commit()
-            return {"status": "scheduled", "transaction_id": new_id, "detail": f"Zlecenie zaprogramowane na {data_sql_zformatowana}."}
-        else:
-            cur.execute("""
-                UPDATE Konta 
-                SET saldo = saldo - %s 
-                WHERE uniqueid = %s AND saldo >= %s
-                RETURNING uniqueid;
-            """, (data.amount, data.sender_id, data.amount))
-            
-            weryfikacja_salda = cur.fetchone()
-            if not weryfikacja_salda:
-                raise HTTPException(status_code=400, detail="Odmowa: Brak wystarczających środków na koncie!")
-
-            cur.execute("UPDATE Konta SET saldo = saldo + %s WHERE uniqueid = %s;", (data.amount, id_odbiorcy_koncowy))
-            cur.execute("""
-                INSERT INTO Transakcje (id_konta_nadawcy, id_konta_odbiorcy, kwota, status_operacji, status_analizy)
-                VALUES (%s, %s, %s, 'Zrealizowana', 'Oczekujaca') RETURNING uniqueid;
-            """, (data.sender_id, id_odbiorcy_koncowy, data.amount))
-            new_id = cur.fetchone()[0]
-            conn.commit()
-            return {"status": "sent", "transaction_id": new_id, "detail": "Przelew zrealizowany natychmiastowo."}
-        
-    except HTTPException as he:
-        if 'conn' in locals(): conn.rollback()
-        raise he
+        db.commit()
+        return {"status": "success", "message": "Przelew zrealizowany pomyślnie."}
     except Exception as e:
-        if 'conn' in locals(): conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if 'cur' in locals(): cur.close()
-        if 'conn' in locals(): conn.close()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd systemu: {str(e)}")
 
 @app.post("/api/user/unblock")
-def unblock_transaction(data: UnblockData):
+def unblock_transaction(data: UnblockData, db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE Transakcje SET status_analizy = 'Czysty' WHERE uniqueid = %s;", (data.transaction_id,))
-        cur.execute("""
-            INSERT INTO Zaufani_Odbiorcy (id_nadawcy, id_odbiorcy) 
-            VALUES (%s, %s) ON CONFLICT DO NOTHING;
-        """, (data.sender_id, data.receiver_id))
-        conn.commit()
-        cur.close()
-        conn.close()
+        tx = db.query(models.Transakcja).filter(models.Transakcja.uniqueid == data.transaction_id).first()
+        if tx:
+            tx.status_analizy = 'Czysty'
+            
+        istnieje = db.query(models.ZaufanyOdbiorca).filter(
+            models.ZaufanyOdbiorca.id_nadawcy == data.sender_id,
+            models.ZaufanyOdbiorca.id_odbiorcy == data.receiver_id
+        ).first()
+        
+        if not istnieje:
+            nowy_zaufany = models.ZaufanyOdbiorca(
+                id_nadawcy=data.sender_id,
+                id_odbiorcy=data.receiver_id
+            )
+            db.add(nowy_zaufany)
+            
+        db.commit()
         return {"status": "success", "message": "Odblokowano i dodano do zaufanych"}
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -415,27 +378,25 @@ def get_chart_data(filter: str = "live"):
         return {"error": str(e)}
 
 @app.get("/api/alerts")
-def get_alerts():
+def get_alerts(db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT t.uniqueid, TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD HH24:MI'), t.kwota, w.ocena_anomali, w.status
-            FROM Transakcje t JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
-            WHERE w.czy_podejrzana = true ORDER BY t.czas_transakcji DESC;
-        """)
-        results = cur.fetchall()
-        cur.close()
-        conn.close()
+        results = db.query(models.Transakcja, models.WynikML).join(
+            models.WynikML, models.Transakcja.uniqueid == models.WynikML.id_transkacji
+        ).filter(
+            models.WynikML.czy_podejrzana == True
+        ).order_by(
+            models.Transakcja.czas_transakcji.desc()
+        ).all()
         
-        amounts = [float(row[2]) for row in results]
+        amounts = [float(tx.kwota) for tx, w in results]
         alerts = []
-        for row in results:
-            raw_score = float(row[3])
+        
+        for tx, w in results:
+            raw_score = float(w.ocena_anomali) if w.ocena_anomali else 0.0
             ui_score = round(min(0.99, abs(raw_score) * 2.5 + 0.5), 2)
             if ui_score < CURRENT_THRESHOLD: continue
                 
-            kwota = float(row[2])
+            kwota = float(tx.kwota)
             alert_type = "Nietypowa kwota transakcji"
             
             if amounts.count(kwota) >= 3 and kwota > 100: alert_type = "Wykryto Sieć Piorącą"
@@ -443,14 +404,18 @@ def get_alerts():
             elif kwota > 50000: alert_type = "Odbiorca wysokiego ryzyka"
             elif kwota > 15000: alert_type = "Podejrzana dynamika operacji"
 
+            czas_str = tx.czas_transakcji.strftime("%Y-%m-%d %H:%M") if tx.czas_transakcji else ""
+
             alerts.append({
-                "id": f"ALR-2026-{str(row[0]).zfill(3)}",
-                "date": row[1], "type": alert_type, "score": f"{ui_score:.2f}",
-                "status": row[4]
+                "id": f"ALR-2026-{str(tx.uniqueid).zfill(3)}",
+                "date": czas_str, "type": alert_type, "score": f"{ui_score:.2f}",
+                "status": w.status
             })
             if len(alerts) >= 6: break 
+            
         return alerts
-    except Exception as e: return {"error": str(e)}
+    except Exception as e: 
+        return {"error": str(e)}
 
 @app.get("/api/alerts/history")
 def get_alerts_history():
@@ -626,62 +591,62 @@ def get_global_ledger():
         raise HTTPException(status_code=500, detail=f"Błąd odczytu bazy: {str(e)}")
 
 @app.post("/api/admin/alerts/{tx_id}/approve")
-def admin_approve_transaction(tx_id: int, data: AdminApproveData):
-    conn = get_db_connection()
-    cur = conn.cursor()
+def admin_approve_transaction(tx_id: int, data: AdminApproveData, db: Session = Depends(get_db)):
+    admin = db.query(models.Administrator).filter(models.Administrator.uniqueid == data.admin_id).first()
+    
+    if not admin or admin.status == 'Zawieszony':
+        raise HTTPException(status_code=403, detail="Odmowa dostępu. Twoje konto administratora jest zawieszone.")
+
+    transakcja = db.query(models.Transakcja).filter(models.Transakcja.uniqueid == tx_id).first()
+    wynik = db.query(models.WynikML).filter(models.WynikML.id_transkacji == tx_id).first()
+
+    if not transakcja:
+        raise HTTPException(status_code=404, detail="Transakcja nie istnieje.")
+
+    transakcja.status_analizy = 'Zatwierdzona_Recznie'
+    if wynik:
+        wynik.status = 'Zatwierdzona_Recznie'
+
+    nowy_log = models.AdminAuditLog(
+        admin_id=data.admin_id,
+        id_transakcji=tx_id,
+        akcja='MANUAL_APPROVE',
+        notatka=data.reason
+    )
+    db.add(nowy_log)
+
     try:
-        cur.execute("BEGIN;")
-        cur.execute("UPDATE Transakcje SET status_analizy = 'Zatwierdzona_Recznie' WHERE uniqueid = %s;", (tx_id,))
-        cur.execute("UPDATE Wyniki_ML SET status = 'Zatwierdzona_Recznie' WHERE id_transkacji = %s;", (tx_id,))
-        
-        cur.execute("""
-            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja, notatka)
-            VALUES (%s, %s, 'MANUAL_APPROVE', %s);
-        """, (data.admin_id, tx_id, data.reason))
-        
-        conn.commit()
-        return {"status": "success", "message": "Przelew zatwierdzony, audyt zapisany."}
+        db.commit()
+        return {"status": "success", "message": "Przelew zatwierdzony pomyślnie."}
     except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd: {str(e)}")
-    finally:
-        cur.close()
-        conn.close()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd bazy danych: {str(e)}")
 
 @app.post("/api/admin/users/{user_id}/toggle-block")
-def toggle_user_block(user_id: int, data: ToggleBlockData):
-    conn = get_db_connection()
-    cur = conn.cursor()
+def toggle_user_block(user_id: int, data: ToggleBlockData, db: Session = Depends(get_db)):
+    konto = db.query(models.Konto).filter(models.Konto.uniqueid == user_id).first()
+    
+    if not konto:
+        raise HTTPException(status_code=404, detail="Konto klienta nie istnieje.")
+    
+    nowy_status = 'Zablokowane' if konto.status == 'Aktywne' else 'Aktywne'
+    konto.status = nowy_status
+    
+    akcja_log = f"USER_BLOCK_{user_id}" if nowy_status == 'Zablokowane' else f"USER_UNBLOCK_{user_id}"
+    
+    nowy_log = models.AdminAuditLog(
+        admin_id=data.admin_id,
+        akcja=akcja_log,
+        notatka=f"Administrator zmienił status konta na: {nowy_status}"
+    )
+    db.add(nowy_log)
+    
     try:
-        cur.execute("BEGIN;")
-        
-        cur.execute("SELECT status FROM Konta WHERE uniqueid = %s;", (user_id,))
-        result = cur.fetchone()
-        if not result:
-            raise HTTPException(status_code=404, detail="Użytkownik o podanym ID nie istnieje.")
-        
-        obecny_status = result[0]
-        nowy_status = 'Zablokowane' if obecny_status == 'Aktywne' else 'Aktywne'
-        
-        cur.execute("UPDATE Konta SET status = %s WHERE uniqueid = %s;", (nowy_status, user_id))
-        
-        akcja_log = f"USER_BLOCK_{user_id}" if nowy_status == 'Zablokowane' else f"USER_UNBLOCK_{user_id}"
-        cur.execute("""
-            INSERT INTO admin_audit_log (admin_id, id_transakcji, akcja)
-            VALUES (%s, NULL, %s); 
-        """, (data.admin_id, akcja_log))
-        
-        conn.commit()
-        return {"status": "success", "message": f"Zmieniono status użytkownika #{user_id} na: {nowy_status}"}
-    except HTTPException as he:
-        conn.rollback()
-        raise he
+        db.commit()
+        return {"status": "success", "message": f"Konto uzyskało status: {nowy_status}"}
     except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd krytyczny: {str(e)}")
-    finally:
-        cur.close()
-        conn.close()
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Błąd operacji bazodanowej.")
 
 @app.get("/api/admin/users")
 def get_all_users_for_admin():
@@ -725,83 +690,87 @@ def get_all_users_for_admin():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/user/transactions/{tx_id}/request-review")
-def request_manual_review(tx_id: int):
+def request_manual_review(tx_id: int, db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        tx = db.query(models.Transakcja).filter(
+            models.Transakcja.uniqueid == tx_id, 
+            models.Transakcja.status_analizy == 'Zablokowana'
+        ).first()
         
-        cur.execute("""
-            UPDATE Transakcje 
-            SET status_analizy = 'Do_Weryfikacji' 
-            WHERE uniqueid = %s AND status_analizy = 'Zablokowana';
-        """, (tx_id,))
+        if tx:
+            tx.status_analizy = 'Do_Weryfikacji'
+            
+        wynik = db.query(models.WynikML).filter(
+            models.WynikML.id_transkacji == tx_id
+        ).first()
         
-        cur.execute("""
-            UPDATE Wyniki_ML 
-            SET status = 'Do_Weryfikacji' 
-            WHERE id_transkacji = %s;
-        """, (tx_id,))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
+        if wynik:
+            wynik.status = 'Do_Weryfikacji'
+            
+        db.commit()
         return {"status": "success", "message": "Zgłoszono do weryfikacji"}
     except Exception as e:
-        if 'conn' in locals(): conn.rollback()
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/admin/list")
-def get_all_admins():
+def get_all_admins(db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("""
-            SELECT a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, a.status, COUNT(l.id) as resolved_cases
-            FROM Administratorzy a
-            LEFT JOIN admin_audit_log l ON a.uniqueid = l.admin_id AND l.akcja = 'MANUAL_APPROVE'
-            GROUP BY a.uniqueid, a.login, a.rola, a.imie_nazwisko, a.email, a.status
-            ORDER BY resolved_cases DESC, a.uniqueid ASC;
-        """)
+        results = db.query(
+            models.Administrator,
+            func.count(models.AdminAuditLog.id)
+        ).outerjoin(
+            models.AdminAuditLog, 
+            (models.Administrator.uniqueid == models.AdminAuditLog.admin_id) & 
+            (models.AdminAuditLog.akcja == 'MANUAL_APPROVE')
+        ).group_by(
+            models.Administrator.uniqueid
+        ).order_by(
+            func.count(models.AdminAuditLog.id).desc(),
+            models.Administrator.uniqueid.asc()
+        ).all()
         
         admin_list = []
-        for row in cur.fetchall():
+        for admin, resolved_cases in results:
             admin_list.append({
-                "id": row[0],
-                "login": row[1],
-                "role": row[2],
-                "name": row[3],
-                "email": row[4],
-                "status": row[5], 
-                "resolvedCases": row[6]
+                "id": admin.uniqueid,
+                "login": admin.login,
+                "role": admin.rola,
+                "name": admin.imie_nazwisko,
+                "email": getattr(admin, 'email', ""),
+                "status": admin.status, 
+                "resolvedCases": resolved_cases
             })
             
-        cur.close()
-        conn.close()
         return admin_list
     except Exception as e:
-        print(f"BŁĄD SQL W ADMIN LIST: {e}") 
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/admin/transactions/{tx_id}/audit")
-def get_transaction_audit(tx_id: int):
+def get_transaction_audit(tx_id: int, db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT a.imie_nazwisko, a.rola, l.akcja, l.notatka, l.data_logu 
-            FROM admin_audit_log l
-            JOIN Administratorzy a ON l.admin_id = a.uniqueid
-            WHERE l.id_transakcji = %s
-            ORDER BY l.data_logu DESC LIMIT 1;
-        """, (tx_id,))
-        res = cur.fetchone()
-        cur.close()
-        conn.close()
-        
-        if res:
-            czas = res[4].strftime("%Y-%m-%d %H:%M") if res[4] else "Brak danych" 
-            return {"admin": res[0], "role": res[1], "action": res[2], "reason": res[3], "timestamp": czas}
+        result = db.query(models.AdminAuditLog, models.Administrator).join(
+            models.Administrator, models.AdminAuditLog.admin_id == models.Administrator.uniqueid
+        ).filter(
+            models.AdminAuditLog.id_transakcji == tx_id
+        ).order_by(
+            models.AdminAuditLog.id.desc()
+        ).first()
+
+        if result:
+            log, admin = result
+            czas = "Brak danych" 
+            if hasattr(log, 'czas_operacji') and log.czas_operacji:
+                czas = log.czas_operacji.strftime("%Y-%m-%d %H:%M")
+
+            return {
+                "admin": admin.imie_nazwisko, 
+                "role": admin.rola, 
+                "action": log.akcja, 
+                "reason": log.notatka, 
+                "timestamp": czas
+            }
+
         return {"message": "Brak notatek dla tej transakcji."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
