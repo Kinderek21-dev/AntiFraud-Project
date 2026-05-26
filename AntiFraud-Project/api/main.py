@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 from database import SessionLocal, engine
 import models
+from sqlalchemy import or_
 
+from sqlalchemy import func, case, desc
 app = FastAPI()
 def get_db():
     db = SessionLocal()
@@ -131,37 +133,30 @@ async def startup_event():
 
 
 @app.post("/api/user/login")
-def login_user_portal(data: LoginData):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT uniqueid, haslo_hash, nazwa_wlasciciela, status FROM Konta WHERE login = %s;", (data.login,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
+def login_user_portal(data: LoginData, db: Session = Depends(get_db)):
+    user = db.query(models.Konto).filter(models.Konto.login == data.login).first()
 
-    if not result:
+    if not user:
         raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło")
 
-    user_id, db_hash, user_name, status = result 
-    
-    if status == 'Zablokowane':
+    if user.status == 'Zablokowane':
         raise HTTPException(
             status_code=403, 
             detail="Dostęp zabroniony. Twoje konto zostało zablokowane przez departament bezpieczeństwa AML."
         )
     
-    if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
+    if bcrypt.checkpw(data.password.encode('utf-8'), user.haslo_hash.encode('utf-8')):
         expiration = datetime.utcnow() + timedelta(hours=1)
         token = jwt.encode({
-            "user_id": user_id,
+            "user_id": user.uniqueid,
             "exp": expiration
         }, SECRET_KEY, algorithm=ALGORITHM)
         
         return {
             "status": "success",
             "token": token,
-            "user_id": user_id,
-            "user_name": user_name
+            "user_id": user.uniqueid,
+            "user_name": user.nazwa_wlasciciela
         }
     
     raise HTTPException(status_code=401, detail="Błędne hasło")
@@ -328,34 +323,24 @@ def unblock_transaction(data: UnblockData):
 
 
 @app.post("/api/login")
-def login_user(data: LoginData):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT uniqueid, haslo_hash, rola, status FROM Administratorzy WHERE login = %s;", (data.login,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
+def login_user(data: LoginData, db: Session = Depends(get_db)):
+    admin = db.query(models.Administrator).filter(models.Administrator.login == data.login).first()
     
-    if not result: 
+    if not admin: 
         raise HTTPException(status_code=401, detail="Nieprawidłowy login lub hasło admina")
     
-    admin_id = result[0]
-    db_hash = result[1]
-    rola = result[2]
-    status = result[3]
-    
-    if status == 'Zawieszony':
+    if admin.status == 'Zawieszony':
         raise HTTPException(
             status_code=403, 
             detail="Dostęp zablokowany. To konto administratora zostało zawieszone przez audyt wewnętrzny."
         )
     
     try:
-        if bcrypt.checkpw(data.password.encode('utf-8'), db_hash.encode('utf-8')):
+        if bcrypt.checkpw(data.password.encode('utf-8'), admin.haslo_hash.encode('utf-8')):
             return {
                 "status": "success",
-                "admin_id": admin_id,
-                "role": rola
+                "admin_id": admin.uniqueid,
+                "role": admin.rola
             }
     except:
         pass
@@ -372,32 +357,22 @@ def update_settings(data: SettingsData):
     return {"message": "Zapisano ustawienia", "threshold": CURRENT_THRESHOLD}
 
 @app.post("/api/alerts/{alert_id}/status")
-def update_alert_status(alert_id: str, data: StatusData):
+def update_alert_status(alert_id: str, data: StatusData, db: Session = Depends(get_db)):
     try:
         db_id = int(alert_id.split("-")[-1])
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE Wyniki_ML SET status = %s WHERE id_transkacji = %s;", (data.status, db_id))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"status": "Zaktualizowano w bazie"}
+        wynik = db.query(models.WynikML).filter(models.WynikML.id_transkacji == db_id).first()
+        
+        if wynik:
+            wynik.status = data.status
+            db.commit()
+            return {"status": "Zaktualizowano w bazie"}
+        else:
+            return {"error": "Nie znaleziono wyniku ML"}
     except Exception as e:
         return {"error": str(e)}
 
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
-    #try:
-    #    conn = get_db_connection()
-    #    cur = conn.cursor()
-    #    cur.execute("SELECT COUNT(*) FROM Transakcje;")
-    #    total_transactions = cur.fetchone()[0]
-    #    cur.execute("SELECT COUNT(*) FROM Wyniki_ML WHERE czy_podejrzana = true;")
-    #    total_anomalies = cur.fetchone()[0]
-    #    cur.close()
-    #    conn.close()
-    #    return {"analyzed_transactions": total_transactions, "detected_anomalies": total_anomalies}
-  #  except Exception as e: return {"error": str(e)}
     total_transactions = db.query(models.Transakcja).count()
     total_anomalies = db.query(models.WynikML).filter(models.WynikML.czy_podejrzana == True).count()
     return {"analyzed_transactions": total_transactions, "detected_anomalies": total_anomalies}
@@ -407,26 +382,37 @@ def get_chart_data(filter: str = "live"):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
         if filter == "live":
             cur.execute("""
                 SELECT TO_CHAR(t.czas_transakcji, 'HH24:MI') as czas, COUNT(t.uniqueid) as total,
                        COALESCE(SUM(CASE WHEN w.czy_podejrzana = true THEN 1 ELSE 0 END), 0) as anomalies
                 FROM Transakcje t LEFT JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
-                GROUP BY TO_CHAR(t.czas_transakcji, 'HH24:MI') ORDER BY MAX(t.czas_transakcji) DESC LIMIT 15;
+                GROUP BY TO_CHAR(t.czas_transakcji, 'HH24:MI') 
+                ORDER BY MAX(t.czas_transakcji) DESC LIMIT 15;
             """)
         else:
             cur.execute("""
                 SELECT TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD') as czas, COUNT(t.uniqueid) as total,
                        COALESCE(SUM(CASE WHEN w.czy_podejrzana = true THEN 1 ELSE 0 END), 0) as anomalies
                 FROM Transakcje t LEFT JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
-                GROUP BY TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD') ORDER BY MAX(t.czas_transakcji) DESC LIMIT 15;
+                GROUP BY TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD') 
+                ORDER BY MAX(t.czas_transakcji) DESC LIMIT 15;
             """)
+            
         results = cur.fetchall()
         cur.close()
         conn.close()
+        
         results.reverse()
-        return {"labels": [row[0] for row in results], "transactions": [row[1] for row in results], "anomalies": [row[2] for row in results]}
-    except Exception as e: return {"error": str(e)}
+        
+        return {
+            "labels": [row[0] for row in results], 
+            "transactions": [row[1] for row in results], 
+            "anomalies": [row[2] for row in results]
+        }
+    except Exception as e: 
+        return {"error": str(e)}
 
 @app.get("/api/alerts")
 def get_alerts():
@@ -905,15 +891,13 @@ def get_admin_audit_log(admin_id: int):
 
 
 @app.post("/api/admin/{admin_id}/suspend")
-def suspend_admin(admin_id: int):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE Administratorzy SET status = 'Zawieszony' WHERE uniqueid = %s;", (admin_id,))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"status": "success", "message": "Admin został zawieszony w bazie"}
-    except Exception as e:
-        if 'conn' in locals(): conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+def suspend_admin(admin_id: int, db: Session = Depends(get_db)):
+    admin = db.query(models.Administrator).filter(models.Administrator.uniqueid == admin_id).first()
+    
+    if not admin:
+        raise HTTPException(status_code=404, detail="Nie znaleziono administratora")
+        
+    admin.status = 'Zawieszony'
+    db.commit()
+    
+    return {"status": "success", "message": "Admin został zawieszony w bazie"}

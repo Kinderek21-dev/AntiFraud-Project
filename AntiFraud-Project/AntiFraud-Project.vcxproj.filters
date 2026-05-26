@@ -84,5 +84,11 @@
     <None Include="frontend-react\src\InsiderThreat.jsx">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="api\database.py">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="api\models.py">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -133,8 +133,10 @@
     <ClInclude Include="Generator.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="api\database.py" />
     <None Include="api\main.py" />
     <None Include="api\ml_worker.py" />
+    <None Include="api\models.py" />
     <None Include="frontend-react\src\AccountFreezing.jsx" />
     <None Include="frontend-react\src\AllTransactions.jsx" />
     <None Include="frontend-react\src\AmlAlerts.jsx" />
