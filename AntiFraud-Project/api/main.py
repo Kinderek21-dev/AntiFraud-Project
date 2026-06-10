@@ -224,6 +224,8 @@ def get_user_dashboard(user_id: int):
 
 @app.post("/api/user/transfer")
 def create_transfer(data: TransferData, db: Session = Depends(get_db)):
+    from sqlalchemy import text 
+    
     if data.amount <= 0:
         raise HTTPException(status_code=400, detail="Kwota przelewu musi być większa niż zero.")
 
@@ -239,25 +241,43 @@ def create_transfer(data: TransferData, db: Session = Depends(get_db)):
     if nadawca.saldo < data.amount:
         raise HTTPException(status_code=400, detail="Brak wystarczających środków na koncie.")
 
-    nadawca.saldo -= data.amount
-    odbiorca.saldo += data.amount
+    status_op = 'Zrealizowana'
+    if data.typ_przelewu == 'zaplanowany':
+        status_op = 'Zaplanowana'
+    elif data.typ_przelewu == 'cykliczny':
+        status_op = 'Cykliczna'
+
+    if status_op == 'Zrealizowana':
+        nadawca.saldo -= data.amount
+        odbiorca.saldo += data.amount
 
     nowa_transakcja = models.Transakcja(
         id_konta_nadawcy=data.sender_id,
         id_konta_odbiorcy=data.receiver_id,
         kwota=data.amount,
-        status_operacji='Zrealizowana',
+        status_operacji=status_op,
         status_analizy='Oczekujaca'
     )
     
-    db.add(nowa_transakcja)
-
     try:
+        db.add(nowa_transakcja)
+        db.flush() 
+
+        if data.data_wykonania and status_op != 'Zrealizowana':
+            czysty_czas = str(data.data_wykonania).replace("T", " ") + ":00"
+            
+            db.execute(
+                text("UPDATE Transakcje SET czas_transakcji = :czas WHERE uniqueid = :uid"),
+                {"czas": czysty_czas, "uid": nowa_transakcja.uniqueid}
+            )
+
         db.commit()
-        return {"status": "success", "message": "Przelew zrealizowany pomyślnie."}
+        typ_msg = "natychmiastowy" if status_op == 'Zrealizowana' else status_op.lower()
+        return {"status": "success", "detail": f"Przelew {typ_msg} został przyjęty do realizacji."}
+
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd systemu: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Błąd krytyczny: {str(e)}")
 
 @app.post("/api/user/unblock")
 def unblock_transaction(data: UnblockData, db: Session = Depends(get_db)):
@@ -378,25 +398,29 @@ def get_chart_data(filter: str = "live"):
         return {"error": str(e)}
 
 @app.get("/api/alerts")
-def get_alerts(db: Session = Depends(get_db)):
+def get_alerts():
     try:
-        results = db.query(models.Transakcja, models.WynikML).join(
-            models.WynikML, models.Transakcja.uniqueid == models.WynikML.id_transkacji
-        ).filter(
-            models.WynikML.czy_podejrzana == True
-        ).order_by(
-            models.Transakcja.czas_transakcji.desc()
-        ).all()
+        conn = get_db_connection()
+        cur = conn.cursor()
         
-        amounts = [float(tx.kwota) for tx, w in results]
+        cur.execute("""
+            SELECT t.uniqueid, TO_CHAR(t.czas_transakcji, 'YYYY-MM-DD HH24:MI'), 
+                   t.kwota, w.ocena_anomali, w.status
+            FROM Transakcje t JOIN Wyniki_ML w ON t.uniqueid = w.id_transkacji
+            WHERE w.czy_podejrzana = true ORDER BY t.czas_transakcji DESC;
+        """)
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        amounts = [float(row[2]) for row in results]
         alerts = []
-        
-        for tx, w in results:
-            raw_score = float(w.ocena_anomali) if w.ocena_anomali else 0.0
+        for row in results:
+            raw_score = float(row[3])
             ui_score = round(min(0.99, abs(raw_score) * 2.5 + 0.5), 2)
             if ui_score < CURRENT_THRESHOLD: continue
-                
-            kwota = float(tx.kwota)
+            
+            kwota = float(row[2])
             alert_type = "Nietypowa kwota transakcji"
             
             if amounts.count(kwota) >= 3 and kwota > 100: alert_type = "Wykryto Sieć Piorącą"
@@ -404,17 +428,19 @@ def get_alerts(db: Session = Depends(get_db)):
             elif kwota > 50000: alert_type = "Odbiorca wysokiego ryzyka"
             elif kwota > 15000: alert_type = "Podejrzana dynamika operacji"
 
-            czas_str = tx.czas_transakcji.strftime("%Y-%m-%d %H:%M") if tx.czas_transakcji else ""
-
             alerts.append({
-                "id": f"ALR-2026-{str(tx.uniqueid).zfill(3)}",
-                "date": czas_str, "type": alert_type, "score": f"{ui_score:.2f}",
-                "status": w.status
+                "id": f"ALR-2026-{str(row[0]).zfill(3)}",
+                "date": row[1], 
+                "type": alert_type, 
+                "score": f"{ui_score:.2f}",
+                "status": row[4]
             })
-            if len(alerts) >= 6: break 
+            
+            if len(alerts) >= 6: break
             
         return alerts
     except Exception as e: 
+        print(f"BŁĄD W GET_ALERTS: {e}")
         return {"error": str(e)}
 
 @app.get("/api/alerts/history")

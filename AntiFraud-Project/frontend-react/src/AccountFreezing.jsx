@@ -91,6 +91,28 @@ export default function AccountFreezing() {
 
     const frozenCount = users.filter(u => getStatus(u) === 'Zablokowane').length;
 
+    const handleExportCSV = () => {
+        if (filteredUsers.length === 0) {
+            alert("Brak danych do eksportu!");
+            return;
+        }
+
+        const headers = "ID_Konta,Nazwa_Uzytkownika,Poziom_Ryzyka,Status_Konta\n";
+
+        const csvData = filteredUsers.map(u =>
+            `${u.accId || u.id},${u.name},${getRiskLevel(u)},${getStatus(u) === 'Zablokowane' ? 'Zamrozone' : 'Aktywne'}`
+        ).join("\n");
+
+        const blob = new Blob(["\uFEFF" + headers + csvData], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "lista_podejrzanych_kont.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const styles = `
         .dashboard-body { display: flex; height: 100vh; background-color: #F8FAFC; color: #1E293B; width: 100vw; overflow: hidden; font-family: 'Inter', sans-serif;}
         .sidebar { width: 260px; background-color: #243B8B; color: white; display: flex; flex-direction: column; padding: 30px 20px; flex-shrink: 0; }
@@ -193,7 +215,9 @@ export default function AccountFreezing() {
                     </div>
 
                     <button className="btn-outline"><i className="fa-solid fa-filter"></i> Filtry</button>
-                    <button className="btn-primary"><i className="fa-solid fa-download"></i> Eksport CSV</button>
+                    <button className="btn-primary" onClick={handleExportCSV}>
+                        <i className="fa-solid fa-download"></i> Eksport CSV
+                    </button>
                 </div>
 
                 <div className="table-container">
